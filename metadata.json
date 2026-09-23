@@ -1,0 +1,6 @@
+{
+  "name": "ClearFlow Chit Fund SaaS",
+  "description": "Mobile-first multi-tenant chitti fund management web app with precise payout schedules and treasury ledgers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
