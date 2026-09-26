@@ -21,7 +21,7 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!memberName.trim()) return;
-    const finalPhone = `+91 ${phone.trim()}`;
+    const finalPhone = `+91${phone.trim()}`;
     onSubmit(share.share_id, memberName.trim(), finalPhone);
   };
 
@@ -31,11 +31,18 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
         <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
           <div className="flex items-center gap-2">
             <Edit3 className="w-4 h-4 text-sky-400" />
-            <h3 className="font-bold text-sm">Edit Member Info ({share.share_id})</h3>
+            <h3 className="font-bold text-sm">Edit Member Info</h3>
           </div>
           <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-white transition">
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Tag Banner showing Tenant ID / Manager ID, Chitti ID, Share ID */}
+        <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 text-[11px] font-mono text-slate-700 space-y-0.5">
+          <div><strong className="text-slate-900">Tenant / Manager ID:</strong> {share.tenant_id}</div>
+          <div><strong className="text-slate-900">Chitti ID:</strong> {share.chitti_id}</div>
+          <div><strong className="text-slate-900">Share ID:</strong> {share.share_id}</div>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">

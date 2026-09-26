@@ -54,9 +54,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     const google = (window as any).google;
     if (!google || !google.accounts || !google.accounts.oauth2) {
       setLoading(false);
-      // Fallback: direct login as primary manager or prompt
-      const email = prompt("Enter your Google Manager Email:", "mahirocks66@gmail.com");
-      if (email) verifyAndLogin(email);
+      alert("Google Sign-In is initializing. Please try again in a moment.");
       return;
     }
 
@@ -90,8 +88,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     } catch (err) {
       setLoading(false);
       console.error("Google OAuth error:", err);
-      const email = prompt("Enter your Google Manager Email:", "mahirocks66@gmail.com");
-      if (email) verifyAndLogin(email);
+      alert("Google OAuth encountered an error. Please check your connection and try again.");
     }
   };
 
@@ -144,17 +141,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* Manager Login Prominent Buttons */}
         <div className="mt-8 w-full max-w-md space-y-3">
           <button
-            onClick={() => verifyAndLogin("mahirocks66@gmail.com")}
-            className="w-full bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-bold py-4 px-6 rounded-2xl text-sm flex items-center justify-center gap-3 shadow-xl shadow-sky-600/30 transition hover:scale-[1.02] cursor-pointer"
-          >
-            <div className="w-6 h-6 rounded-full bg-white text-slate-900 flex items-center justify-center font-extrabold text-xs shrink-0 shadow">
-              M
-            </div>
-            <span>Sign in as Mahi Rocks (mahirocks66@gmail.com)</span>
-            <ArrowRight className="w-4 h-4 ml-auto" />
-          </button>
-
-          <button
             onClick={handleDirectGoogleOAuth}
             disabled={loading}
             className="w-full bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-900 font-bold py-3.5 px-6 rounded-2xl text-xs flex items-center justify-center gap-3 shadow-lg transition hover:scale-[1.02] cursor-pointer border border-slate-200"
@@ -166,7 +152,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <path fill="#FBBC05" d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.6H1.15C.42 8.08 0 9.75 0 12s.42 3.92 1.15 5.4l4.12-3.16z"/>
               <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.23 0 3.19 2.68 1.15 6.6l4.12 3.15c.95-2.85 3.6-4.96 6.73-4.96z"/>
             </svg>
-            <span className="text-slate-800">{loading ? "Connecting to Google..." : "Google OAuth Popup (Alternative)"}</span>
+            <span className="text-slate-800">{loading ? "Connecting to Google..." : "Sign in with Google"}</span>
             <ArrowRight className="w-4 h-4 ml-auto text-slate-400" />
           </button>
         </div>

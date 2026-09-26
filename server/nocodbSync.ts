@@ -9,6 +9,27 @@ const headers = {
   "Content-Type": "application/json",
 };
 
+const tableColumnsMap: Record<string, string[]> = {
+  tenants: ["tenant_id", "name", "status", "Id", "id"],
+  mathTemplates: ["formula_id", "name", "description", "Id", "id"],
+  chittis: ["chitti_id", "tenant_id", "formula_id", "name", "start_date", "total_members", "total_months", "u_due", "d_due", "commission", "current_month", "last_checked_date", "payout_schedule", "Id", "id"],
+  shares: ["share_id", "chitti_id", "tenant_id", "member_name", "phone", "win_month", "total_paid", "total_billed", "net_balance", "pending_amount", "advance_amount", "Id", "id"],
+  transactions: ["tx_id", "share_id", "chitti_id", "tenant_id", "amount", "date_paid", "payment_mode", "is_void", "Id", "id"],
+  chittiExpenses: ["expense_id", "chitti_id", "tenant_id", "title", "type", "amount", "date", "Id", "id"]
+};
+
+function cleanRecord(tableName: string, record: any) {
+  const allowed = tableColumnsMap[tableName];
+  if (!allowed) return record;
+  const cleaned: any = {};
+  for (const key of allowed) {
+    if (record[key] !== undefined) {
+      cleaned[key] = record[key];
+    }
+  }
+  return cleaned;
+}
+
 export async function checkNocoDBConnection(): Promise<boolean> {
   try {
     const res = await fetch(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, { headers });
@@ -55,14 +76,28 @@ export async function getTableId(tableName: string): Promise<string | null> {
   return tableName; // Fallback
 }
 
+export async function getAllRecords(tableName: string) {
+  try {
+    const tableId = await getTableId(tableName);
+    const target = tableId || tableName;
+    const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?limit=1000`, { headers });
+    const data = await res.json() as any;
+    return data.list || [];
+  } catch (err) {
+    console.error(`Error fetching records from ${tableName}:`, err);
+    return [];
+  }
+}
+
 export async function insertRecord(tableName: string, record: any) {
   try {
     const tableId = await getTableId(tableName);
     const target = tableId || tableName;
+    const cleaned = cleanRecord(tableName, record);
     const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
       method: "POST",
       headers,
-      body: JSON.stringify(record),
+      body: JSON.stringify(cleaned),
     });
     const data = await res.json();
     return data;
@@ -72,15 +107,87 @@ export async function insertRecord(tableName: string, record: any) {
   }
 }
 
+export async function upsertRecord(tableName: string, uniqueField: string, uniqueValue: any, record: any) {
+  try {
+    const tableId = await getTableId(tableName);
+    const target = tableId || tableName;
+    const cleaned = cleanRecord(tableName, record);
+
+    let rowId = record.Id || record.id || record.ID || cleaned.Id || cleaned.id;
+
+    if (!rowId) {
+      const allRecs = await getAllRecords(tableName);
+      const found = allRecs.find((r: any) => {
+        if (tableName === "shares" && record.chitti_id) {
+          return String(r[uniqueField]) === String(uniqueValue) && String(r.chitti_id) === String(record.chitti_id);
+        }
+        return String(r[uniqueField]) === String(uniqueValue);
+      });
+      if (found) {
+        rowId = found.Id || found.id || found.ID || found.row_id;
+        record.Id = rowId;
+        record.id = rowId;
+      }
+    }
+
+    if (rowId) {
+      delete cleaned.Id;
+      delete cleaned.id;
+      delete cleaned.ID;
+
+      const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${rowId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(cleaned),
+      });
+      const data = (await res.json()) as any;
+      console.log(`NocoDB PATCH ${tableName} (rowId=${rowId}) result:`, data);
+      if (data && !data.error && data.msg !== 'Cannot PATCH ...') {
+        record.Id = rowId;
+        record.id = rowId;
+        return data;
+      }
+    }
+
+    const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(cleaned),
+    });
+    const data = (await res.json()) as any;
+    console.log(`NocoDB POST ${tableName} (${uniqueField}=${uniqueValue}) result:`, data);
+    if (data && (data.Id || data.id)) {
+      record.Id = data.Id || data.id;
+      record.id = data.id || data.Id;
+    }
+    return data;
+  } catch (err) {
+    console.error(`Error upserting record in NocoDB table ${tableName}:`, err);
+    return null;
+  }
+}
+
 export async function updateRecord(tableName: string, record: any) {
   try {
     const tableId = await getTableId(tableName);
     const target = tableId || tableName;
-    // NocoDB update expects PATCH with record containing Id or primary key
+    const cleaned = cleanRecord(tableName, record);
+    const rowId = cleaned.Id || cleaned.id || record.Id || record.id;
+    if (rowId) {
+      delete cleaned.Id;
+      delete cleaned.id;
+      const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${rowId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(cleaned),
+      });
+      const data = await res.json();
+      return data;
+    }
     const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
       method: "PATCH",
       headers,
-      body: JSON.stringify(record),
+      body: JSON.stringify(cleaned),
     });
     const data = await res.json();
     return data;
@@ -94,18 +201,34 @@ export async function deleteRecordsByChittiId(chittiId: string) {
   const tablesToCheck = ["chittis", "shares", "transactions", "chittiExpenses"];
   for (const tableName of tablesToCheck) {
     try {
-      const tableId = await getTableId(tableName);
-      const target = tableId || tableName;
-      const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?where=(chitti_id,eq,${chittiId})`, { headers });
-      const data = await res.json() as any;
-      const records = data.list || [];
-      for (const rec of records) {
-        if (rec.Id) {
-          await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
-            method: "DELETE",
-            headers,
-            body: JSON.stringify({ Id: rec.Id }),
-          });
+      const records = await getAllRecords(tableName);
+      const matching = records.filter((rec: any) => String(rec.chitti_id) === String(chittiId));
+      for (const rec of matching) {
+        const recordId = rec.Id || rec.id || rec.ID || rec.row_id || Object.keys(rec).find(k => k.toLowerCase() === 'id' && rec[k] !== undefined ? rec[k] : null);
+        const resolvedId = recordId !== undefined && recordId !== null && typeof recordId !== 'function' ? (rec[recordId] !== undefined ? rec[recordId] : recordId) : (rec.Id || rec.id);
+
+        if (resolvedId) {
+          const tableId = await getTableId(tableName);
+          const target = tableId || tableName;
+
+          // Strategy 1: DELETE with JSON body
+          try {
+            await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
+              method: "DELETE",
+              headers,
+              body: JSON.stringify({ Id: resolvedId, id: resolvedId }),
+            });
+          } catch (e) {}
+
+          // Strategy 2: DELETE with path parameter
+          try {
+            await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${resolvedId}`, {
+              method: "DELETE",
+              headers,
+            });
+          } catch (e) {}
+
+          console.log(`NocoDB DELETE executed for ${tableName} chitti_id=${chittiId} record Id=${resolvedId}`);
         }
       }
     } catch (err) {
@@ -114,8 +237,27 @@ export async function deleteRecordsByChittiId(chittiId: string) {
   }
 }
 
-export async function ensureTableExists(tableName: string, columns: any[]) {
+export async function deleteRecord(tableName: string, uniqueField: string, uniqueValue: any) {
+  try {
+    const records = await getAllRecords(tableName);
+    const rec = records.find((r: any) => String(r[uniqueField]) === String(uniqueValue));
+    if (rec) {
+      const resolvedId = rec.Id || rec.id || rec.ID || rec.row_id;
+      if (resolvedId) {
+        const tableId = await getTableId(tableName);
+        const target = tableId || tableName;
+        await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${resolvedId}`, {
+          method: "DELETE",
+          headers,
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`Error deleting record from ${tableName}:`, err);
+  }
+}
 
+export async function ensureTableExists(tableName: string, columns: any[]) {
   try {
     const tables = await getNocoDBTables();
     let existing = tables.find((t: any) => t.table_name === tableName || t.title === tableName || t.table_name === `nc_m3mp___${tableName}` || t.table_name === `nc_${tableName}`);
@@ -131,10 +273,9 @@ export async function ensureTableExists(tableName: string, columns: any[]) {
         }),
       });
       const result = await res.json();
-      console.log(`Table ${tableName} creation result:`, result);
       existing = result;
     } else {
-      console.log(`Table ${tableName} exists. Ensuring all columns are present...`);
+      console.log(`Table ${tableName} exists.`);
     }
 
     if (existing && existing.id) {
@@ -147,9 +288,9 @@ export async function ensureTableExists(tableName: string, columns: any[]) {
 
       for (const col of columns) {
         if (!existingColNames.has(col.column_name)) {
-          console.log(`Adding missing column '${col.column_name}' (${col.uidt}) to table '${tableName}'...`);
+          console.log(`Adding missing column '${col.column_name}' to table '${tableName}'...`);
           try {
-            const addRes = await fetch(`${NOCODB_URL}/api/v1/db/meta/tables/${existing.id}/columns`, {
+            await fetch(`${NOCODB_URL}/api/v1/db/meta/tables/${existing.id}/columns`, {
               method: "POST",
               headers,
               body: JSON.stringify({
@@ -157,8 +298,6 @@ export async function ensureTableExists(tableName: string, columns: any[]) {
                 uidt: col.uidt,
               }),
             });
-            const addResult = await addRes.json();
-            console.log(`Added column ${col.column_name} result:`, addResult);
           } catch (colErr) {
             console.error(`Failed to add column ${col.column_name}:`, colErr);
           }
@@ -174,11 +313,10 @@ export async function ensureTableExists(tableName: string, columns: any[]) {
 }
 
 export async function initializeNocoDBTables() {
-  console.log("Initializing NocoDB tables and schema for base:", BASE_ID);
-
   await ensureTableExists("tenants", [
     { column_name: "tenant_id", uidt: "SingleLineText" },
-    { column_name: "name", uidt: "SingleLineText" }
+    { column_name: "name", uidt: "SingleLineText" },
+    { column_name: "status", uidt: "SingleLineText" }
   ]);
 
   await ensureTableExists("mathTemplates", [
@@ -237,6 +375,4 @@ export async function initializeNocoDBTables() {
     { column_name: "amount", uidt: "Number" },
     { column_name: "date", uidt: "SingleLineText" },
   ]);
-
-  console.log("NocoDB table initialization completed successfully.");
 }

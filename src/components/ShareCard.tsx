@@ -39,9 +39,14 @@ export const ShareCard: React.FC<ShareCardProps> = ({
         {/* Header: Share ID, Name, Top-Right: Pending / Advance Amount (Two Lines) */}
         <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 gap-3">
           <div className="flex items-center gap-2 overflow-hidden min-w-0">
-            <span className="bg-slate-100 text-slate-700 font-mono font-bold text-xs px-2.5 py-1 rounded-md border border-slate-200 shrink-0">
-              {share.share_id}
-            </span>
+            <div className="flex flex-col shrink-0">
+              <span className="bg-slate-100 text-slate-700 font-mono font-bold text-xs px-2 py-0.5 rounded-md border border-slate-200 text-center">
+                {share.share_id}
+              </span>
+              <span className="text-[9px] text-sky-600 font-mono font-semibold text-center mt-0.5 truncate max-w-[85px]" title={`Chitti ID: ${chitti.chitti_id}`}>
+                {chitti.chitti_id}
+              </span>
+            </div>
             <div className="truncate min-w-0">
               <h3 className="font-semibold text-slate-900 text-sm leading-tight flex items-center gap-1 truncate">
                 <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />

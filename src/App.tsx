@@ -12,6 +12,7 @@ import { LandingPage } from "./components/LandingPage";
 import { ManagerDashboard } from "./components/ManagerDashboard";
 import { GuestPortal } from "./components/GuestPortal";
 import { UnauthorizedPage } from "./components/UnauthorizedPage";
+import { NocoDBModal } from "./components/NocoDBModal";
 
 export default function App() {
   const [view, setView] = useState<"landing" | "manager_dashboard" | "guest_portal" | "unauthorized" | "chittis_workspace">("landing");
@@ -43,6 +44,7 @@ export default function App() {
   const [assignWinnerShare, setAssignWinnerShare] = useState<MemberShare | null>(null);
   const [editMemberShare, setEditMemberShare] = useState<MemberShare | null>(null);
   const [isCreateChittiOpen, setIsCreateChittiOpen] = useState<boolean>(false);
+  const [isNocoDBOpen, setIsNocoDBOpen] = useState<boolean>(false);
 
   // Load tenants (Manager accounts) and math templates on mount
   useEffect(() => {
@@ -163,41 +165,69 @@ export default function App() {
   };
 
   const handleAssignWinner = async (shareId: string, winMonth: number | null) => {
+    if (!assignWinnerShare) return;
+    const shareTenantId = assignWinnerShare.tenant_id;
+    const shareChittiId = assignWinnerShare.chitti_id;
+
     try {
       const res = await fetch(`/api/shares/${shareId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tenant_id: currentTenantId,
+          tenant_id: shareTenantId,
+          chitti_id: shareChittiId,
           win_month: winMonth,
         }),
       });
       if (res.ok) {
         setAssignWinnerShare(null);
         fetchDetails();
+      } else {
+        console.error("Failed to update winner in backend, status:", res.status);
+        fetchDetails();
       }
     } catch (err) {
       console.error("Error assigning winner:", err);
+      fetchDetails();
     }
   };
 
   const handleEditMember = async (shareId: string, memberName: string, phone: string) => {
+    if (!editMemberShare) return;
+    const shareTenantId = editMemberShare.tenant_id;
+    const shareChittiId = editMemberShare.chitti_id;
+
+    // Optimistic UI card-level update for instant reflection without full reload
+    if (details) {
+      setDetails({
+        ...details,
+        members: details.members.map(m =>
+          m.share_id === shareId && m.chitti_id === shareChittiId ? { ...m, member_name: memberName, phone } : m
+        )
+      });
+    }
+    setEditMemberShare(null);
+
     try {
       const res = await fetch(`/api/shares/${shareId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tenant_id: currentTenantId,
+          tenant_id: shareTenantId,
+          chitti_id: shareChittiId,
           member_name: memberName,
           phone,
         }),
       });
-      if (res.ok) {
-        setEditMemberShare(null);
-        fetchDetails();
+      if (!res.ok) {
+        console.error("Failed to update share in backend, status:", res.status);
+        fetchDetails(); // Re-fetch on failure
+      } else {
+        fetchDetails(); // Refresh details to guarantee DB sync
       }
     } catch (err) {
       console.error("Error editing member info:", err);
+      fetchDetails();
     }
   };
 
@@ -484,8 +514,12 @@ export default function App() {
         onGoToChittis={() => setView("chittis_workspace")}
         onSignOut={() => {
           setManagerEmail(null);
+          setCurrentTenantId("");
+          setDetails(null);
+          setChittis([]);
           setView("landing");
         }}
+        onOpenNocoDB={() => setIsNocoDBOpen(true)}
       />
     );
   }
@@ -512,14 +546,28 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans pb-28">
       {/* Top Navigation Bar with Back to Manager Dashboard button */}
       <div className="bg-slate-900 text-slate-100 px-4 py-2 flex items-center justify-between text-xs border-b border-slate-800">
-        <button
-          onClick={() => setView("manager_dashboard")}
-          className="bg-slate-800 hover:bg-slate-700 text-sky-300 font-semibold py-1.5 px-3 rounded-lg border border-slate-700 transition flex items-center gap-1.5"
-        >
-          ← Back to Manager Dashboard
-        </button>
-        <span className="text-slate-400 font-medium truncate max-w-[200px]">
-          Manager: {managerEmail || currentTenantId}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setView("manager_dashboard")}
+            className="bg-slate-800 hover:bg-slate-700 text-sky-300 font-semibold py-1.5 px-3 rounded-lg border border-slate-700 transition flex items-center gap-1.5"
+          >
+            ← Back to Manager Dashboard
+          </button>
+          <button
+            onClick={() => {
+              setManagerEmail(null);
+              setCurrentTenantId("");
+              setDetails(null);
+              setChittis([]);
+              setView("landing");
+            }}
+            className="bg-slate-800 hover:bg-slate-700 text-rose-300 font-semibold py-1.5 px-3 rounded-lg border border-slate-700 transition flex items-center gap-1.5"
+          >
+            Sign Out
+          </button>
+        </div>
+        <span className="text-slate-400 font-medium truncate">
+          Manager: <span className="text-white">{managerEmail || currentTenantId}</span> | Chitti ID: <span className="text-sky-300 font-bold">{currentChittiId || "None"}</span>
         </span>
       </div>
 
@@ -537,6 +585,7 @@ export default function App() {
         monthPayout={details?.payout_t || 0}
         totalPending={details?.total_pending_market || 0}
         onOpenCreateChitti={() => setIsCreateChittiOpen(true)}
+        onOpenNocoDB={() => setIsNocoDBOpen(true)}
       />
 
       {/* Main Content Container */}
@@ -721,6 +770,11 @@ export default function App() {
           onSubmit={handleCreateChitti}
         />
       )}
+
+      <NocoDBModal
+        isOpen={isNocoDBOpen}
+        onClose={() => setIsNocoDBOpen(false)}
+      />
     </div>
   );
 }

@@ -45,6 +45,13 @@ export const AssignWinnerModal: React.FC<AssignWinnerModalProps> = ({
           </button>
         </div>
 
+        {/* Tag Banner showing Tenant ID / Manager ID, Chitti ID, Share ID */}
+        <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 text-[11px] font-mono text-slate-700 space-y-0.5">
+          <div><strong className="text-slate-900">Tenant / Manager ID:</strong> {share.tenant_id}</div>
+          <div><strong className="text-slate-900">Chitti ID:</strong> {share.chitti_id}</div>
+          <div><strong className="text-slate-900">Share ID:</strong> {share.share_id}</div>
+        </div>
+
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
             <div className="flex justify-between font-semibold text-slate-800 mb-1">

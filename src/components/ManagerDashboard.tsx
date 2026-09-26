@@ -1,16 +1,18 @@
 import React from "react";
-import { Shield, ArrowRight, LogOut, CheckCircle2, LayoutDashboard, Phone, Globe } from "lucide-react";
+import { Shield, ArrowRight, LogOut, CheckCircle2, LayoutDashboard, Phone, Database } from "lucide-react";
 
 interface ManagerDashboardProps {
   managerEmail: string;
   onGoToChittis: () => void;
   onSignOut: () => void;
+  onOpenNocoDB: () => void;
 }
 
 export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   managerEmail,
   onGoToChittis,
   onSignOut,
+  onOpenNocoDB,
 }) => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-sky-500 selection:text-white">
@@ -29,6 +31,12 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={onOpenNocoDB}
+              className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 px-3.5 py-2 rounded-xl border border-emerald-500/30 flex items-center gap-1.5 transition font-medium"
+            >
+              <Database className="w-3.5 h-3.5" /> NocoDB Connected
+            </button>
             <button
               onClick={onSignOut}
               className="text-xs bg-slate-800 hover:bg-slate-700 text-rose-300 px-3.5 py-2 rounded-xl border border-slate-700/80 flex items-center gap-1.5 transition"

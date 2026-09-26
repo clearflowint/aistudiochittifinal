@@ -3,12 +3,13 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { spawnSync } from "child_process";
 import fs from "fs";
-import { checkNocoDBConnection, initializeNocoDBTables, getNocoDBTables, insertRecord, updateRecord, deleteRecordsByChittiId } from "./server/nocodbSync";
+import { checkNocoDBConnection, initializeNocoDBTables, getNocoDBTables, insertRecord, updateRecord, upsertRecord, deleteRecordsByChittiId, deleteRecord, getAllRecords } from "./server/nocodbSync";
 
 
 interface Tenant {
   tenant_id: string; // Manager email ID
   name: string;
+  status: string; // "active" or "suspended"
 }
 
 interface MathTemplate {
@@ -77,10 +78,10 @@ const mathTemplates: MathTemplate[] = [
   }
 ];
 
-// Initial seed data: Manager Email ID as tenants
+// Initial seed data: Manager Email ID as tenants whitelist with status
 const tenants: Tenant[] = [
-  { tenant_id: "mahirocks66@gmail.com", name: "mahirocks66@gmail.com" },
-  { tenant_id: "manager.apex@chits.com", name: "manager.apex@chits.com" },
+  { tenant_id: "mahirocks66@gmail.com", name: "Mahi Rocks", status: "active" },
+  { tenant_id: "manager.apex@chits.com", name: "Apex Manager", status: "active" },
 ];
 
 const authorizedManagerEmails: string[] = [
@@ -231,17 +232,49 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Initialize NocoDB tables and seed tenants & mathTemplates automatically on startup
+  // Initialize NocoDB tables and load/seed records on startup from NocoDB
   try {
     await initializeNocoDBTables();
-    for (const t of tenants) {
-      await insertRecord("tenants", t).catch(() => {});
+    
+    const dbTenants = await getAllRecords("tenants");
+    if (dbTenants.length > 0) {
+      tenants.splice(0, tenants.length, ...dbTenants);
+    } else {
+      for (const t of tenants) {
+        await upsertRecord("tenants", "tenant_id", t.tenant_id, t).catch(() => {});
+      }
     }
-    for (const m of mathTemplates) {
-      await insertRecord("mathTemplates", m).catch(() => {});
+
+    const dbMath = await getAllRecords("mathTemplates");
+    if (dbMath.length > 0) {
+      mathTemplates.splice(0, mathTemplates.length, ...dbMath);
+    } else {
+      for (const m of mathTemplates) {
+        await upsertRecord("mathTemplates", "formula_id", m.formula_id, m).catch(() => {});
+      }
+    }
+
+    const dbChittis = await getAllRecords("chittis");
+    if (dbChittis.length > 0) {
+      chittis.splice(0, chittis.length, ...dbChittis);
+    }
+
+    const dbShares = await getAllRecords("shares");
+    if (dbShares.length > 0) {
+      shares.splice(0, shares.length, ...dbShares);
+    }
+
+    const dbTxs = await getAllRecords("transactions");
+    if (dbTxs.length > 0) {
+      transactions.splice(0, transactions.length, ...dbTxs);
+    }
+
+    const dbExp = await getAllRecords("chittiExpenses");
+    if (dbExp.length > 0) {
+      chittiExpenses.splice(0, chittiExpenses.length, ...dbExp);
     }
   } catch (err) {
-    console.error("Failed to initialize NocoDB tables on startup:", err);
+    console.error("Failed to initialize NocoDB tables and load records on startup:", err);
   }
 
   // API Routes
@@ -255,27 +288,40 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/verify-manager", (req, res) => {
+  app.post("/api/auth/verify-manager", async (req, res) => {
     const { email } = req.body;
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
     }
     const cleanEmail = email.trim().toLowerCase();
-    const isAuthorized = authorizedManagerEmails.includes(cleanEmail);
-    if (isAuthorized) {
-      let tenant = tenants.find(t => t.tenant_id === cleanEmail);
-      if (!tenant) {
-        tenant = { tenant_id: cleanEmail, name: cleanEmail };
-        tenants.push(tenant);
+
+    try {
+      const dbTenants = await getAllRecords("tenants");
+      if (dbTenants && dbTenants.length > 0) {
+        tenants.splice(0, tenants.length, ...dbTenants);
       }
-      insertRecord("tenants", tenant).catch(err => console.error("NocoDB tenant sync error:", err));
-      res.json({ authorized: true, email: cleanEmail });
-    } else {
-      res.json({ 
+    } catch (err) {
+      console.error("Failed to refresh tenants from NocoDB:", err);
+    }
+
+    const tenant = tenants.find(t => (t.tenant_id || "").toLowerCase() === cleanEmail);
+
+    if (!tenant) {
+      return res.json({ 
         authorized: false, 
-        message: "Please call ClearFlow Automations +919652169196 for any queries. Thankyou" 
+        message: "Access Denied. Tenant ID not authorized in system whitelist. Please contact ClearFlow Automations +919652169196." 
       });
     }
+
+    const tenantStatus = (tenant.status || "active").toLowerCase();
+    if (tenantStatus === "suspended" || tenantStatus === "inactive") {
+      return res.json({ 
+        authorized: false, 
+        message: "Account Suspended. Manager cannot access existing chittis and database. Please contact ClearFlow Automations +919652169196." 
+      });
+    }
+
+    res.json({ authorized: true, email: cleanEmail });
   });
 
   app.get("/api/tenants", (req, res) => {
@@ -291,33 +337,7 @@ async function startServer() {
     if (!tenant_id) {
       return res.status(400).json({ error: "tenant_id is required" });
     }
-    let filtered = chittis.filter(c => c.tenant_id === tenant_id);
-    if (filtered.length === 0 && tenant_id === "mahirocks66@gmail.com") {
-      const demoChitti: ChittiMaster = {
-        chitti_id: "chit_20_1lakh",
-        tenant_id: "mahirocks66@gmail.com",
-        formula_id: "standard_chit_v1",
-        name: "Apex 20-Month ₹1 Lakh Chitti",
-        start_date: "2025-01-01",
-        total_members: 20,
-        total_months: 20,
-        u_due: 5000,
-        d_due: 6000,
-        commission: 2000,
-      };
-      chittis.push(demoChitti);
-      for (let i = 1; i <= demoChitti.total_members; i++) {
-        shares.push({
-          share_id: `SH-${String(i).padStart(3, '0')}`,
-          chitti_id: demoChitti.chitti_id,
-          tenant_id,
-          member_name: `Member ${i}`,
-          phone: `98000000${String(i).padStart(2, '0')}`,
-          win_month: i <= 3 ? i : null,
-        });
-      }
-      filtered = chittis.filter(c => c.tenant_id === tenant_id);
-    }
+    const filtered = chittis.filter(c => c.tenant_id === tenant_id);
     res.json(filtered);
   });
 
@@ -367,7 +387,11 @@ async function startServer() {
       payout_schedule: JSON.stringify(scheduleArr),
     };
     chittis.push(newChitti);
-    insertRecord("chittis", newChitti).catch(err => console.error("NocoDB chitti sync error:", err));
+    insertRecord("chittis", newChitti).then((resRaw: any) => {
+      if (resRaw && (resRaw.Id || resRaw.id)) {
+        (newChitti as any).Id = resRaw.Id || resRaw.id;
+      }
+    }).catch(err => console.error("NocoDB chitti sync error:", err));
 
     for (let i = 1; i <= newChitti.total_members; i++) {
       const newShare = {
@@ -375,7 +399,7 @@ async function startServer() {
         chitti_id: newChitti.chitti_id,
         tenant_id,
         member_name: `Member ${i}`,
-        phone: `98000000${String(i).padStart(2, '0')}`,
+        phone: `+9198000000${String(i).padStart(2, '0')}`,
         win_month: null,
         total_paid: 0,
         total_billed: 0,
@@ -384,7 +408,11 @@ async function startServer() {
         advance_amount: 0,
       };
       shares.push(newShare);
-      insertRecord("shares", newShare).catch(err => console.error("NocoDB share sync error:", err));
+      insertRecord("shares", newShare).then((resRaw: any) => {
+        if (resRaw && (resRaw.Id || resRaw.id)) {
+          (newShare as any).Id = resRaw.Id || resRaw.id;
+        }
+      }).catch(err => console.error("NocoDB share sync error:", err));
     }
 
     res.json(newChitti);
@@ -677,17 +705,25 @@ async function startServer() {
 
   app.patch("/api/shares/:share_id", (req, res) => {
     const { share_id } = req.params;
-    const { tenant_id, win_month, member_name, phone } = req.body;
+    const { tenant_id, chitti_id, win_month, member_name, phone } = req.body;
     
-    const share = shares.find(s => s.share_id === share_id && (!tenant_id || s.tenant_id === tenant_id));
-    if (!share) {
-      return res.status(404).json({ error: "Share not found or tenant isolation mismatch" });
+    console.log("PATCH /api/shares/:share_id received:", { share_id, tenant_id, chitti_id, win_month, member_name, phone });
+
+    if (!chitti_id || !tenant_id) {
+      return res.status(400).json({ error: "chitti_id and tenant_id are required for share update" });
     }
 
-    // STRICT ISOLATION CHECK: Parent Chitti verification
-    const chitti = chittis.find(c => c.chitti_id === share.chitti_id && c.tenant_id === share.tenant_id);
+    // STRICT ISOLATION CHECK: Validate Chitti exists and belongs to tenant
+    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id === tenant_id);
     if (!chitti) {
-      return res.status(404).json({ error: "Parent Chitti not found for this share" });
+      return res.status(404).json({ error: "Chitti not found or tenant isolation mismatch" });
+    }
+
+    // STRICT ISOLATION CHECK: Validate Share exists, belongs to chitti and tenant
+    const share = shares.find(s => s.share_id === share_id && s.chitti_id === chitti_id && s.tenant_id === tenant_id);
+    if (!share) {
+      console.error("Share not found for update:", { share_id, chitti_id, tenant_id });
+      return res.status(404).json({ error: "Share not found or composite chitti+tenant isolation mismatch" });
     }
 
     if (win_month !== undefined) {
@@ -699,12 +735,15 @@ async function startServer() {
       }
       share.win_month = targetMonth;
     }
-    if (member_name) share.member_name = member_name;
-    if (phone) share.phone = phone;
+    if (member_name !== undefined) share.member_name = member_name;
+    if (phone !== undefined) {
+      const cleanDigits = String(phone).replace(/\D/g, "").slice(-10);
+      share.phone = cleanDigits.length === 10 ? `+91${cleanDigits}` : phone;
+    }
 
     // Persist ledger balances directly in database entity
     recalculateAndPersistShareLedger(share.share_id, share.chitti_id);
-    updateRecord("shares", share).catch(err => console.error("NocoDB share sync error:", err));
+    upsertRecord("shares", "share_id", share.share_id, share).catch(err => console.error("NocoDB share sync error:", err));
 
     res.json(share);
   });
@@ -713,7 +752,14 @@ async function startServer() {
   app.get("/api/chittis/:chitti_id/expenses", (req, res) => {
     const { chitti_id } = req.params;
     const tenant_id = req.query.tenant_id as string;
-    const list = chittiExpenses.filter(e => e.chitti_id === chitti_id && (!tenant_id || e.tenant_id === tenant_id));
+    if (!tenant_id) {
+      return res.status(400).json({ error: "tenant_id is required" });
+    }
+    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id === tenant_id);
+    if (!chitti) {
+      return res.status(404).json({ error: "Chitti not found or tenant isolation mismatch" });
+    }
+    const list = chittiExpenses.filter(e => e.chitti_id === chitti_id && e.tenant_id === tenant_id);
     const total_credit = list.filter(e => e.type === 'credit').reduce((s, e) => s + e.amount, 0);
     const total_debit = list.filter(e => e.type === 'debit').reduce((s, e) => s + e.amount, 0);
     const net_expenses = total_credit - total_debit;
@@ -726,6 +772,10 @@ async function startServer() {
     if (!tenant_id || !title || !type || amount === undefined) {
       return res.status(400).json({ error: "Missing required fields" });
     }
+    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id === tenant_id);
+    if (!chitti) {
+      return res.status(404).json({ error: "Chitti not found or tenant isolation mismatch" });
+    }
     const newExp: ChittiExpense = {
       expense_id: "exp_" + Math.random().toString(36).substring(2, 9),
       chitti_id,
@@ -736,32 +786,42 @@ async function startServer() {
       date: new Date().toISOString().split("T")[0],
     };
     chittiExpenses.push(newExp);
+    insertRecord("chittiExpenses", newExp).catch(err => console.error("NocoDB chittiExpense sync error:", err));
     res.json(newExp);
   });
 
   app.delete("/api/chittis/expenses/:expense_id", (req, res) => {
     const { expense_id } = req.params;
-    const idx = chittiExpenses.findIndex(e => e.expense_id === expense_id);
+    const tenant_id = req.body.tenant_id || req.query.tenant_id;
+    const idx = chittiExpenses.findIndex(e => e.expense_id === expense_id && (!tenant_id || e.tenant_id === tenant_id));
     if (idx === -1) {
-      return res.status(404).json({ error: "Expense not found" });
+      return res.status(404).json({ error: "Expense not found or tenant isolation mismatch" });
     }
     const removed = chittiExpenses.splice(idx, 1)[0];
+    deleteRecord("chittiExpenses", "expense_id", expense_id).catch(err => console.error("NocoDB chittiExpense delete error:", err));
     res.json(removed);
   });
 
   // Delete Chitti ID Endpoint
-  app.delete("/api/chittis/:chitti_id", (req, res) => {
+  app.delete("/api/chittis/:chitti_id", async (req, res) => {
     const { chitti_id } = req.params;
     const tenant_id = req.query.tenant_id as string;
-    const chitIdx = chittis.findIndex(c => c.chitti_id === chitti_id && (!tenant_id || c.tenant_id === tenant_id));
+    if (!tenant_id) {
+      return res.status(400).json({ error: "tenant_id is required" });
+    }
+    const chitIdx = chittis.findIndex(c => c.chitti_id === chitti_id && c.tenant_id === tenant_id);
     if (chitIdx === -1) {
-      return res.status(404).json({ error: "Chitti not found" });
+      return res.status(404).json({ error: "Chitti not found or tenant isolation mismatch" });
     }
     chittis.splice(chitIdx, 1);
     shares = shares.filter(s => s.chitti_id !== chitti_id);
     transactions = transactions.filter(t => t.chitti_id !== chitti_id);
     chittiExpenses = chittiExpenses.filter(e => e.chitti_id !== chitti_id);
-    deleteRecordsByChittiId(chitti_id).catch(err => console.error("NocoDB chitti deletion sync error:", err));
+    try {
+      await deleteRecordsByChittiId(chitti_id);
+    } catch (err) {
+      console.error("NocoDB chitti deletion sync error:", err);
+    }
     res.json({ success: true, chitti_id });
   });
 

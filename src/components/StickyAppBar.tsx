@@ -1,6 +1,6 @@
 import React from "react";
 import { MathTemplate, ChittiMaster } from "../types";
-import { Mail, FunctionSquare, Layers, Calendar, DollarSign, AlertTriangle, Zap } from "lucide-react";
+import { Mail, FunctionSquare, Layers, Calendar, DollarSign, AlertTriangle, Zap, Database } from "lucide-react";
 
 interface StickyAppBarProps {
   currentTenantId: string;
@@ -15,6 +15,7 @@ interface StickyAppBarProps {
   monthPayout: number;
   totalPending: number;
   onOpenCreateChitti: () => void;
+  onOpenNocoDB: () => void;
 }
 
 export const StickyAppBar: React.FC<StickyAppBarProps> = ({
@@ -30,10 +31,18 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
   monthPayout,
   totalPending,
   onOpenCreateChitti,
+  onOpenNocoDB,
 }) => {
   // Filter chittis based on selected math engine template
   const filteredChittis = (chittis || []).filter(
     (c) => !currentFormulaId || c.formula_id === currentFormulaId
+  );
+
+  const uniqueMathTemplates = Array.from(
+    new Map((mathTemplates || []).map(m => [m.formula_id, m])).values()
+  );
+  const uniqueFilteredChittis = Array.from(
+    new Map((filteredChittis || []).map(c => [c.chitti_id, c])).values()
   );
 
   return (
@@ -43,9 +52,17 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
         <span className="font-bold tracking-wide bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
           ClearFlow Chit Manager
         </span>
-        <span className="text-slate-400 flex items-center gap-1 font-medium">
-          <Zap className="w-3 h-3 text-amber-400" /> powered by ClearFlow Automations
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onOpenNocoDB}
+            className="flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-md hover:bg-emerald-500/20 transition font-medium cursor-pointer"
+          >
+            <Database className="w-3 h-3" /> NocoDB Connected
+          </button>
+          <span className="text-slate-400 hidden sm:flex items-center gap-1 font-medium">
+            <Zap className="w-3 h-3 text-amber-400" /> ClearFlow Automations
+          </span>
+        </div>
       </div>
 
       {/* 3-Tier Hierarchy App Bar: Manager Name -> Math Formula -> Chitti Group */}
@@ -78,8 +95,8 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
               onChange={(e) => onSelectFormula(e.target.value)}
               className="bg-transparent text-white font-medium focus:outline-none cursor-pointer w-full truncate"
             >
-              {(mathTemplates || []).map((m, idx) => (
-                <option key={m.formula_id || `formula-${idx}`} value={m.formula_id} className="bg-slate-800 text-white">
+              {uniqueMathTemplates.map((m, idx) => (
+                <option key={`${m.formula_id}-${idx}`} value={m.formula_id} className="bg-slate-800 text-white">
                   {m.name}
                 </option>
               ))}
@@ -95,10 +112,10 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
               onChange={(e) => onSelectChitti(e.target.value)}
               className="bg-transparent text-white font-medium focus:outline-none cursor-pointer w-full truncate"
             >
-              {filteredChittis.length > 0 ? (
-                filteredChittis.map((c, idx) => (
-                  <option key={c.chitti_id || `chitti-${idx}`} value={c.chitti_id} className="bg-slate-800 text-white">
-                    {c.name}
+              {uniqueFilteredChittis.length > 0 ? (
+                uniqueFilteredChittis.map((c, idx) => (
+                  <option key={`${c.chitti_id}-${idx}`} value={c.chitti_id} className="bg-slate-800 text-white">
+                    {c.name} ({c.chitti_id})
                   </option>
                 ))
               ) : (
