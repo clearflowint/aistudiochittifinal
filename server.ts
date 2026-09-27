@@ -290,8 +290,8 @@ async function startServer() {
 
   app.post("/api/auth/verify-manager", async (req, res) => {
     const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: "Email is required" });
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ error: "Valid email is required" });
     }
     const cleanEmail = email.trim().toLowerCase();
 
@@ -304,29 +304,30 @@ async function startServer() {
       console.error("Failed to refresh tenants from NocoDB:", err);
     }
 
-    const tenant = tenants.find(t => {
+    let tenant = tenants.find(t => {
       const tid = (t.tenant_id || t.email || "").toLowerCase();
       return tid === cleanEmail;
     });
 
-    const isAuthorizedStatic = authorizedManagerEmails.some(e => e.toLowerCase() === cleanEmail);
-
-    if (!tenant && !isAuthorizedStatic) {
-      // Auto-register new tenant if desired or allow access if valid email
-      return res.json({ 
-        authorized: false, 
-        message: "Access Denied. Tenant ID not authorized in system whitelist. Please contact ClearFlow Automations +919652169196." 
-      });
+    // If not found in memory, auto-register this valid email as an active tenant
+    if (!tenant) {
+      const newTenant = {
+        tenant_id: cleanEmail,
+        name: cleanEmail.split("@")[0],
+        status: "active"
+      };
+      tenants.push(newTenant);
+      tenant = newTenant;
+      // Try syncing to NocoDB in background
+      upsertRecord("tenants", "tenant_id", cleanEmail, newTenant).catch(() => {});
     }
 
-    if (tenant) {
-      const tenantStatus = (tenant.status || "active").toLowerCase();
-      if (tenantStatus === "suspended" || tenantStatus === "inactive") {
-        return res.json({ 
-          authorized: false, 
-          message: "Account Suspended. Manager cannot access existing chittis and database. Please contact ClearFlow Automations +919652169196." 
-        });
-      }
+    const tenantStatus = (tenant.status || "active").toLowerCase();
+    if (tenantStatus === "suspended" || tenantStatus === "inactive") {
+      return res.json({ 
+        authorized: false, 
+        message: "Account Suspended. Manager cannot access existing chittis and database. Please contact ClearFlow Automations +919652169196." 
+      });
     }
 
     res.json({ authorized: true, email: cleanEmail });
