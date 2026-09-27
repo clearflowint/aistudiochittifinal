@@ -49,15 +49,16 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
     <header className="relative bg-slate-900 text-white shadow-lg border-b border-slate-800">
       {/* Top Branding Bar */}
       <div className="bg-slate-950 px-3 py-1 flex items-center justify-between border-b border-slate-800/80 text-[11px]">
-        <span className="font-bold tracking-wide bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
-          ClearFlow Chit Manager
+        <span className="font-bold tracking-wide text-slate-300 flex items-center gap-1.5">
+          <Calendar className="w-3.5 h-3.5 text-sky-400" />
+          {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
         </span>
         <div className="flex items-center gap-3">
           <button
             onClick={onOpenNocoDB}
             className="flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-md hover:bg-emerald-500/20 transition font-medium cursor-pointer"
           >
-            <Database className="w-3 h-3" /> NocoDB Connected
+            <Database className="w-3 h-3" /> DB Connected
           </button>
           <span className="text-slate-400 hidden sm:flex items-center gap-1 font-medium">
             <Zap className="w-3 h-3 text-amber-400" /> ClearFlow Automations

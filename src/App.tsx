@@ -15,23 +15,55 @@ import { UnauthorizedPage } from "./components/UnauthorizedPage";
 import { NocoDBModal } from "./components/NocoDBModal";
 
 export default function App() {
-  const [view, setView] = useState<"landing" | "manager_dashboard" | "guest_portal" | "unauthorized" | "chittis_workspace">("landing");
-  const [managerEmail, setManagerEmail] = useState<string | null>(null);
+  const [view, setView] = useState<"landing" | "manager_dashboard" | "guest_portal" | "unauthorized" | "chittis_workspace">(() => {
+    return (localStorage.getItem("clearflow_view") as any) || "landing";
+  });
+  const [managerEmail, setManagerEmail] = useState<string | null>(() => {
+    return localStorage.getItem("clearflow_manager_email") || null;
+  });
   const [unauthorizedMessage, setUnauthorizedMessage] = useState<string>("");
 
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [currentTenantId, setCurrentTenantId] = useState<string>("mahirocks66@gmail.com");
+  const [currentTenantId, setCurrentTenantId] = useState<string>(() => {
+    return localStorage.getItem("clearflow_tenant_id") || "mahirocks66@gmail.com";
+  });
 
   const [mathTemplates, setMathTemplates] = useState<MathTemplate[]>([]);
   const [currentFormulaId, setCurrentFormulaId] = useState<string>("standard_chit_v1");
 
   const [chittis, setChittis] = useState<ChittiMaster[]>([]);
-  const [currentChittiId, setCurrentChittiId] = useState<string>("");
+  const [currentChittiId, setCurrentChittiId] = useState<string>(() => {
+    return localStorage.getItem("clearflow_chitti_id") || "";
+  });
+
+  // Persist session state in localStorage so reloads and PWA shortcuts retain the exact workspace view & tenant
+  useEffect(() => {
+    localStorage.setItem("clearflow_view", view);
+  }, [view]);
+
+  useEffect(() => {
+    if (managerEmail) localStorage.setItem("clearflow_manager_email", managerEmail);
+    else localStorage.removeItem("clearflow_manager_email");
+  }, [managerEmail]);
+
+  useEffect(() => {
+    if (currentTenantId) localStorage.setItem("clearflow_tenant_id", currentTenantId);
+  }, [currentTenantId]);
+
+  useEffect(() => {
+    if (currentChittiId) localStorage.setItem("clearflow_chitti_id", currentChittiId);
+    else localStorage.removeItem("clearflow_chitti_id");
+  }, [currentChittiId]);
 
   const [activeMonth, setActiveMonth] = useState<number>(1);
   const [details, setDetails] = useState<ChittiDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+  };
 
   // Request fingerprinting ref to prevent cross-chitti data leakage / race conditions
   const fetchFingerprintRef = useRef<string>("");
@@ -142,6 +174,23 @@ export default function App() {
       });
   };
 
+  const handleSignOut = () => {
+    localStorage.removeItem("clearflow_view");
+    localStorage.removeItem("clearflow_manager_email");
+    localStorage.removeItem("clearflow_tenant_id");
+    localStorage.removeItem("clearflow_chitti_id");
+    setManagerEmail(null);
+    setCurrentTenantId("");
+    setDetails(null);
+    setChittis([]);
+    setView("landing");
+  };
+
+  const handleManualRefresh = () => {
+    setIsRefreshing(true);
+    window.location.reload();
+  };
+
   useEffect(() => {
     fetchDetails();
   }, [currentChittiId, currentTenantId, activeMonth]);
@@ -162,10 +211,15 @@ export default function App() {
       });
       if (res.ok) {
         setRecordPaymentShare(null);
+        showToast(`Successfully recorded payment of ₹${Math.abs(amount).toLocaleString()}! Ledger updated.`);
         fetchDetails(true); // Silent refresh to update card area instantly without full loader
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Failed to record payment on server.", "error");
       }
     } catch (err) {
       console.error("Error recording payment:", err);
+      showToast("Network error: Unable to record payment.", "error");
     }
   };
 
@@ -186,13 +240,16 @@ export default function App() {
       });
       if (res.ok) {
         setAssignWinnerShare(null);
+        showToast(winMonth !== null ? `Assigned winner for Month ${winMonth} successfully!` : `Cleared winner assignment successfully!`);
         fetchDetails(true); // Silent refresh
       } else {
-        console.error("Failed to update winner in backend, status:", res.status);
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Failed to update winner assignment.", "error");
         fetchDetails(true);
       }
     } catch (err) {
       console.error("Error assigning winner:", err);
+      showToast("Network error: Unable to update winner.", "error");
       fetchDetails(true);
     }
   };
@@ -225,13 +282,15 @@ export default function App() {
         }),
       });
       if (!res.ok) {
-        console.error("Failed to update share in backend, status:", res.status);
+        showToast("Failed to update member info on server.", "error");
         fetchDetails(); // Re-fetch on failure
       } else {
+        showToast("Member details updated successfully!");
         fetchDetails(); // Refresh details to guarantee DB sync
       }
     } catch (err) {
       console.error("Error editing member info:", err);
+      showToast("Network error: Unable to update member info.", "error");
       fetchDetails();
     }
   };
@@ -517,13 +576,7 @@ export default function App() {
       <ManagerDashboard
         managerEmail={managerEmail || currentTenantId}
         onGoToChittis={() => setView("chittis_workspace")}
-        onSignOut={() => {
-          setManagerEmail(null);
-          setCurrentTenantId("");
-          setDetails(null);
-          setChittis([]);
-          setView("landing");
-        }}
+        onSignOut={handleSignOut}
         onOpenNocoDB={() => setIsNocoDBOpen(true)}
       />
     );
@@ -559,13 +612,7 @@ export default function App() {
             ← Back to Manager Dashboard
           </button>
           <button
-            onClick={() => {
-              setManagerEmail(null);
-              setCurrentTenantId("");
-              setDetails(null);
-              setChittis([]);
-              setView("landing");
-            }}
+            onClick={handleSignOut}
             className="bg-slate-800 hover:bg-slate-700 text-rose-300 font-semibold py-1.5 px-3 rounded-lg border border-slate-700 transition flex items-center gap-1.5"
           >
             Sign Out
@@ -610,10 +657,10 @@ export default function App() {
             />
           </div>
           <button
-            onClick={() => fetchDetails(true)}
+            onClick={handleManualRefresh}
             disabled={isRefreshing}
             className="bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 shadow-sm transition shrink-0 cursor-pointer"
-            title="Refresh share cards from NocoDB"
+            title="Refresh share cards and chittis from NocoDB database"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isRefreshing ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">Refresh</span>
@@ -809,6 +856,33 @@ export default function App() {
         isOpen={isNocoDBOpen}
         onClose={() => setIsNocoDBOpen(false)}
       />
+
+      {/* Explicit Modal Acknowledgement Popup */}
+      {toast && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden p-6 text-center space-y-4">
+            <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center text-xl font-bold ${
+              toast.type === "success" ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+            }`}>
+              {toast.type === "success" ? "✓" : "!"}
+            </div>
+            <div>
+              <h4 className="font-bold text-slate-900 text-base mb-1">
+                {toast.type === "success" ? "Transaction Acknowledged" : "Action Alert"}
+              </h4>
+              <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                {toast.message}
+              </p>
+            </div>
+            <button
+              onClick={() => setToast(null)}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-semibold rounded-xl text-xs transition shadow-md"
+            >
+              OK, Dismiss
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

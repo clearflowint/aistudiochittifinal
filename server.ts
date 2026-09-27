@@ -399,7 +399,7 @@ async function startServer() {
         chitti_id: newChitti.chitti_id,
         tenant_id,
         member_name: `Member ${i}`,
-        phone: `+9198000000${String(i).padStart(2, '0')}`,
+        phone: "+910000000000",
         win_month: null,
         total_paid: 0,
         total_billed: 0,
@@ -635,7 +635,7 @@ async function startServer() {
     (share as any).advance_amount = netBalance > 0 ? netBalance : 0;
   }
 
-  app.post("/api/transactions", (req, res) => {
+  app.post("/api/transactions", async (req, res) => {
     const idempotencyKey = req.headers["idempotency-key"] as string;
     const { share_id, chitti_id, tenant_id, amount, payment_mode } = req.body;
     if (!share_id || !chitti_id || !tenant_id || amount === undefined) {
@@ -672,16 +672,26 @@ async function startServer() {
       is_void: false,
     };
     transactions.push(newTx);
-    insertRecord("transactions", newTx).catch(err => console.error("NocoDB transaction sync error:", err));
 
     // Persist ledger balances directly in database entity
     recalculateAndPersistShareLedger(share_id, chitti_id);
+
+    try {
+      console.log(`[DB AWAIT] Inserting transaction ${newTx.tx_id} into NocoDB...`, new Date().toISOString());
+      const syncRes = await insertRecord("transactions", newTx);
+      console.log(`[DB CONFIRMED] NocoDB responded for transaction ${newTx.tx_id}:`, syncRes, new Date().toISOString());
+      if (!syncRes || syncRes.error) {
+        console.error("NocoDB transaction sync returned error:", syncRes);
+      }
+    } catch (err) {
+      console.error("NocoDB transaction sync exception:", err);
+    }
 
     if (idempotencyKey) {
       idempotencyCache.set(`${tenant_id}:${chitti_id}:${share_id}:${idempotencyKey}`, newTx);
     }
 
-    res.json(newTx);
+    res.json({ success: true, transaction: newTx, verified: true });
   });
 
   // Transaction Voiding endpoint with strict isolation
@@ -703,7 +713,7 @@ async function startServer() {
     res.json({ success: true, tx });
   });
 
-  app.patch("/api/shares/:share_id", (req, res) => {
+  app.patch("/api/shares/:share_id", async (req, res) => {
     const { share_id } = req.params;
     const { tenant_id, chitti_id, win_month, member_name, phone } = req.body;
     
@@ -743,9 +753,15 @@ async function startServer() {
 
     // Persist ledger balances directly in database entity
     recalculateAndPersistShareLedger(share.share_id, share.chitti_id);
-    upsertRecord("shares", "share_id", share.share_id, share).catch(err => console.error("NocoDB share sync error:", err));
+    try {
+      console.log(`[DB AWAIT] Upserting share ${share.share_id} into NocoDB...`, new Date().toISOString());
+      const upsertRes = await upsertRecord("shares", "share_id", share.share_id, share);
+      console.log(`[DB CONFIRMED] NocoDB responded for share ${share.share_id}:`, upsertRes, new Date().toISOString());
+    } catch (err) {
+      console.error("NocoDB share sync error:", err);
+    }
 
-    res.json(share);
+    res.json({ success: true, share, verified: true });
   });
 
   // Chitti Expenses Endpoints

@@ -21,7 +21,12 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!memberName.trim()) return;
-    const finalPhone = `+91${phone.trim()}`;
+    const cleanDigits = phone.trim().replace(/\D/g, "");
+    if (cleanDigits.length !== 10) {
+      alert("Phone number must be exactly 10 digits.");
+      return;
+    }
+    const finalPhone = `+91${cleanDigits}`;
     onSubmit(share.share_id, memberName.trim(), finalPhone);
   };
 

@@ -16,14 +16,21 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [amount, setAmount] = useState<string>(share.monthly_due_current.toString());
   const [paymentMode, setPaymentMode] = useState<string>("UPI");
   const [txType, setTxType] = useState<"credit" | "debit">("credit");
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     const num = Number(amount);
     if (!num || num <= 0) return;
+    setIsSubmitting(true);
     // If debit (correction), submit negative amount
     const finalAmount = txType === "debit" ? -Math.abs(num) : Math.abs(num);
-    onSubmit(share.share_id, finalAmount, paymentMode);
+    try {
+      await onSubmit(share.share_id, finalAmount, paymentMode);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -126,11 +133,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             </button>
             <button
               type="submit"
-              className={`w-1/2 text-white font-semibold py-2.5 rounded-xl text-xs transition shadow-sm ${
+              disabled={isSubmitting}
+              className={`w-1/2 text-white font-semibold py-2.5 rounded-xl text-xs transition shadow-sm disabled:opacity-50 ${
                 txType === "credit" ? "bg-sky-600 hover:bg-sky-500 active:bg-sky-700" : "bg-rose-600 hover:bg-rose-500 active:bg-rose-700"
               }`}
             >
-              Confirm {txType === "credit" ? "Payment" : "Correction"}
+              {isSubmitting ? "Processing..." : `Confirm ${txType === "credit" ? "Payment" : "Correction"}`}
             </button>
           </div>
         </form>

@@ -42,7 +42,7 @@ export const NocoDBModal: React.FC<NocoDBModalProps> = ({ isOpen, onClose }) => 
             </div>
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                NocoDB Cloud Connection
+                Database Cloud Connection
               </h3>
               <p className="text-xs text-slate-400">Real-time database sync & table bindings</p>
             </div>
