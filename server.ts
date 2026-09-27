@@ -346,7 +346,8 @@ async function startServer() {
     if (!tenant_id) {
       return res.status(400).json({ error: "tenant_id is required" });
     }
-    const filtered = chittis.filter(c => c.tenant_id === tenant_id);
+    const cleanReq = tenant_id.trim().toLowerCase();
+    const filtered = chittis.filter(c => (c.tenant_id || "").trim().toLowerCase() === cleanReq);
     res.json(filtered);
   });
 

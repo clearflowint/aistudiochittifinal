@@ -76,6 +76,72 @@ export async function getTableId(tableName: string): Promise<string | null> {
   return tableName; // Fallback
 }
 
+function normalizeRecord(tableName: string, r: any) {
+  if (!r) return r;
+  const getProp = (...names: string[]) => {
+    for (const n of names) {
+      if (r[n] !== undefined && r[n] !== null) return r[n];
+      const foundKey = Object.keys(r).find(k => k.toLowerCase() === n.toLowerCase());
+      if (foundKey && r[foundKey] !== undefined && r[foundKey] !== null) return r[foundKey];
+    }
+    return undefined;
+  };
+
+  if (tableName === "tenants") {
+    const tenant_id = getProp("tenant_id", "tenantId", "email", "id");
+    const name = getProp("name", "fullName") || tenant_id;
+    const status = getProp("status") || "active";
+    return { ...r, tenant_id, name, status };
+  }
+  if (tableName === "chittis") {
+    const chitti_id = getProp("chitti_id", "chittiId", "id");
+    const tenant_id = getProp("tenant_id", "tenantId");
+    const formula_id = getProp("formula_id", "formulaId") || "standard_chit_v1";
+    const name = getProp("name", "chittiname", "title") || "Chitti Group";
+    const start_date = getProp("start_date", "startDate") || "2025-01-01";
+    const total_members = Number(getProp("total_members", "totalMembers")) || 20;
+    const total_months = Number(getProp("total_months", "totalMonths")) || 20;
+    const u_due = Number(getProp("u_due", "uDue")) || 5000;
+    const d_due = Number(getProp("d_due", "dDue")) || 6000;
+    const commission = Number(getProp("commission")) || 2000;
+    const current_month = Number(getProp("current_month", "currentMonth")) || 1;
+    const payout_schedule = getProp("payout_schedule", "payoutSchedule");
+    const last_checked_date = getProp("last_checked_date", "lastCheckedDate");
+    return { ...r, chitti_id, tenant_id, formula_id, name, start_date, total_members, total_months, u_due, d_due, commission, current_month, payout_schedule, last_checked_date };
+  }
+  if (tableName === "shares") {
+    const share_id = getProp("share_id", "shareId", "id");
+    const chitti_id = getProp("chitti_id", "chittiId");
+    const tenant_id = getProp("tenant_id", "tenantId");
+    const member_name = getProp("member_name", "memberName", "name") || "Member";
+    const phone = getProp("phone") || "";
+    const win_month = getProp("win_month", "winMonth");
+    return { ...r, share_id, chitti_id, tenant_id, member_name, phone, win_month: win_month !== undefined && win_month !== "" && win_month !== null ? Number(win_month) : null };
+  }
+  if (tableName === "transactions") {
+    const tx_id = getProp("tx_id", "txId", "id");
+    const share_id = getProp("share_id", "shareId");
+    const chitti_id = getProp("chitti_id", "chittiId");
+    const tenant_id = getProp("tenant_id", "tenantId");
+    const amount = Number(getProp("amount")) || 0;
+    const date_paid = getProp("date_paid", "datePaid") || new Date().toISOString().split("T")[0];
+    const payment_mode = getProp("payment_mode", "paymentMode") || "UPI";
+    const is_void = getProp("is_void", "isVoid");
+    return { ...r, tx_id, share_id, chitti_id, tenant_id, amount, date_paid, payment_mode, is_void };
+  }
+  if (tableName === "chittiExpenses") {
+    const expense_id = getProp("expense_id", "expenseId", "id");
+    const chitti_id = getProp("chitti_id", "chittiId");
+    const tenant_id = getProp("tenant_id", "tenantId");
+    const title = getProp("title") || "Expense";
+    const type = getProp("type") || "debit";
+    const amount = Number(getProp("amount")) || 0;
+    const date = getProp("date") || new Date().toISOString().split("T")[0];
+    return { ...r, expense_id, chitti_id, tenant_id, title, type, amount, date };
+  }
+  return r;
+}
+
 export async function getAllRecords(tableName: string) {
   try {
     const tableId = await getTableId(tableName);
@@ -83,15 +149,7 @@ export async function getAllRecords(tableName: string) {
     const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?limit=1000`, { headers });
     const data = await res.json() as any;
     const list = data.list || [];
-    return list.map((r: any) => {
-      if (tableName === "tenants") {
-        const tenant_id = r.tenant_id || r.TenantId || r.tenantId || r.email || r.Email || r.Id || r.id;
-        const name = r.name || r.Name || r.fullName || tenant_id;
-        const status = r.status || r.Status || "active";
-        return { ...r, tenant_id, name, status };
-      }
-      return r;
-    });
+    return list.map((r: any) => normalizeRecord(tableName, r));
   } catch (err) {
     console.error(`Error fetching records from ${tableName}:`, err);
     return [];

@@ -19,13 +19,13 @@ export default function App() {
     return (localStorage.getItem("clearflow_view") as any) || "landing";
   });
   const [managerEmail, setManagerEmail] = useState<string | null>(() => {
-    return localStorage.getItem("clearflow_manager_email") || null;
+    return localStorage.getItem("clearflow_manager_email") || localStorage.getItem("clearflow_tenant_id") || null;
   });
   const [unauthorizedMessage, setUnauthorizedMessage] = useState<string>("");
 
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [currentTenantId, setCurrentTenantId] = useState<string>(() => {
-    return localStorage.getItem("clearflow_tenant_id") || "";
+    return localStorage.getItem("clearflow_tenant_id") || localStorage.getItem("clearflow_manager_email") || "";
   });
 
   const [mathTemplates, setMathTemplates] = useState<MathTemplate[]>([]);
@@ -42,13 +42,28 @@ export default function App() {
   }, [view]);
 
   useEffect(() => {
-    if (managerEmail) localStorage.setItem("clearflow_manager_email", managerEmail);
-    else localStorage.removeItem("clearflow_manager_email");
+    if (managerEmail) {
+      localStorage.setItem("clearflow_manager_email", managerEmail);
+      localStorage.setItem("clearflow_tenant_id", managerEmail);
+      if (!currentTenantId) setCurrentTenantId(managerEmail);
+    } else {
+      localStorage.removeItem("clearflow_manager_email");
+    }
   }, [managerEmail]);
 
   useEffect(() => {
-    if (currentTenantId) localStorage.setItem("clearflow_tenant_id", currentTenantId);
+    if (currentTenantId) {
+      localStorage.setItem("clearflow_tenant_id", currentTenantId);
+      if (!managerEmail) setManagerEmail(currentTenantId);
+    }
   }, [currentTenantId]);
+
+  // Guard against blank screens if view requires login but no session exists
+  useEffect(() => {
+    if ((view === "manager_dashboard" || view === "chittis_workspace") && !managerEmail && !currentTenantId) {
+      setView("landing");
+    }
+  }, [view, managerEmail, currentTenantId]);
 
   useEffect(() => {
     if (currentChittiId) localStorage.setItem("clearflow_chitti_id", currentChittiId);
@@ -85,9 +100,6 @@ export default function App() {
       .then((res) => res.json())
       .then((data) => {
         setTenants(data);
-        if (data.length > 0) {
-          setCurrentTenantId(data[0].tenant_id);
-        }
       })
       .catch((err) => console.error("Error fetching tenants:", err));
 
