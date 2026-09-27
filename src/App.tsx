@@ -32,6 +32,7 @@ export default function App() {
   const [currentFormulaId, setCurrentFormulaId] = useState<string>("standard_chit_v1");
 
   const [chittis, setChittis] = useState<ChittiMaster[]>([]);
+  const [chittisLoading, setChittisLoading] = useState<boolean>(true);
   const [currentChittiId, setCurrentChittiId] = useState<string>(() => {
     return localStorage.getItem("clearflow_chitti_id") || "";
   });
@@ -116,21 +117,31 @@ export default function App() {
 
   // Load chittis when manager email changes
   useEffect(() => {
-    if (!currentTenantId) return;
+    if (!currentTenantId) {
+      setChittisLoading(false);
+      return;
+    }
+    setChittisLoading(true);
     setDetails(null); // Clear previous chitti cache immediately to prevent cross-chitti leak
     fetch(`/api/chittis?tenant_id=${currentTenantId}`)
       .then((res) => res.json())
       .then((data) => {
-        setChittis(data);
-        if (data.length > 0) {
-          setCurrentChittiId(data[0].chitti_id);
-          setCurrentFormulaId(data[0].formula_id || "standard_chit_v1");
+        const list = Array.isArray(data) ? data : [];
+        setChittis(list);
+        setChittisLoading(false);
+        if (list.length > 0) {
+          setCurrentChittiId(list[0].chitti_id);
+          setCurrentFormulaId(list[0].formula_id || "standard_chit_v1");
         } else {
           setCurrentChittiId("");
           setDetails(null);
         }
       })
-      .catch((err) => console.error("Error fetching chittis:", err));
+      .catch((err) => {
+        console.error("Error fetching chittis:", err);
+        setChittis([]);
+        setChittisLoading(false);
+      });
   }, [currentTenantId]);
 
   // When chitti changes, update formula id from chitti record and reset details cache
@@ -724,7 +735,12 @@ export default function App() {
         </div>
 
         {/* Feed of Share ID Cards */}
-        {chittis.length === 0 ? (
+        {chittisLoading ? (
+          <div className="py-16 text-center flex flex-col items-center justify-center gap-2 text-slate-500">
+            <RefreshCw className="w-6 h-6 animate-spin text-sky-600" />
+            <p className="text-xs">Loading manager workspace & chittis...</p>
+          </div>
+        ) : chittis.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-4 shadow-sm">
             <div className="w-14 h-14 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold shadow-inner">
               ⚡

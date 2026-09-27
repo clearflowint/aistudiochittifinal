@@ -305,7 +305,7 @@ async function startServer() {
     }
 
     let tenant = tenants.find(t => {
-      const tid = (t.tenant_id || t.email || "").toLowerCase();
+      const tid = (t.tenant_id || (t as any).email || "").toLowerCase();
       return tid === cleanEmail;
     });
 
@@ -690,7 +690,7 @@ async function startServer() {
       console.log(`[DB AWAIT] Inserting transaction ${newTx.tx_id} into NocoDB...`, new Date().toISOString());
       const syncRes = await insertRecord("transactions", newTx);
       console.log(`[DB CONFIRMED] NocoDB responded for transaction ${newTx.tx_id}:`, syncRes, new Date().toISOString());
-      if (!syncRes || syncRes.error) {
+      if (!syncRes || (syncRes as any).error) {
         console.error("NocoDB transaction sync returned error:", syncRes);
       }
     } catch (err) {

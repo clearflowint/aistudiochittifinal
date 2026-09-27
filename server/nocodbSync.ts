@@ -32,7 +32,7 @@ function cleanRecord(tableName: string, record: any) {
 
 export async function checkNocoDBConnection(): Promise<boolean> {
   try {
-    const res = await fetch(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, { headers });
+    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, { headers });
     const data = await res.json() as any;
     return !!data && Array.isArray(data.list);
   } catch (err) {
@@ -43,7 +43,7 @@ export async function checkNocoDBConnection(): Promise<boolean> {
 
 export async function getNocoDBTables() {
   try {
-    const res = await fetch(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, { headers });
+    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, { headers });
     const data = await res.json() as any;
     const tables = data.list || [];
     for (const t of tables) {
@@ -64,6 +64,19 @@ export async function getNocoDBTables() {
 }
 
 const tableIdCache = new Map<string, string>();
+
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    throw err;
+  }
+}
 
 export async function getTableId(tableName: string): Promise<string | null> {
   if (tableIdCache.has(tableName)) {
@@ -146,7 +159,7 @@ export async function getAllRecords(tableName: string) {
   try {
     const tableId = await getTableId(tableName);
     const target = tableId || tableName;
-    const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?limit=1000`, { headers });
+    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?limit=1000`, { headers });
     const data = await res.json() as any;
     const list = data.list || [];
     return list.map((r: any) => normalizeRecord(tableName, r));
@@ -161,7 +174,7 @@ export async function insertRecord(tableName: string, record: any) {
     const tableId = await getTableId(tableName);
     const target = tableId || tableName;
     const cleaned = cleanRecord(tableName, record);
-    const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
+    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
       method: "POST",
       headers,
       body: JSON.stringify(cleaned),
@@ -202,7 +215,7 @@ export async function upsertRecord(tableName: string, uniqueField: string, uniqu
       delete cleaned.id;
       delete cleaned.ID;
 
-      const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${rowId}`, {
+      const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${rowId}`, {
         method: "PATCH",
         headers,
         body: JSON.stringify(cleaned),
@@ -216,7 +229,7 @@ export async function upsertRecord(tableName: string, uniqueField: string, uniqu
       }
     }
 
-    const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
+    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
       method: "POST",
       headers,
       body: JSON.stringify(cleaned),
@@ -243,7 +256,7 @@ export async function updateRecord(tableName: string, record: any) {
     if (rowId) {
       delete cleaned.Id;
       delete cleaned.id;
-      const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${rowId}`, {
+      const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${rowId}`, {
         method: "PATCH",
         headers,
         body: JSON.stringify(cleaned),
@@ -251,7 +264,7 @@ export async function updateRecord(tableName: string, record: any) {
       const data = await res.json();
       return data;
     }
-    const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
+    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
       method: "PATCH",
       headers,
       body: JSON.stringify(cleaned),
@@ -280,7 +293,7 @@ export async function deleteRecordsByChittiId(chittiId: string) {
 
           // Strategy 1: DELETE with JSON body
           try {
-            await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
+            await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
               method: "DELETE",
               headers,
               body: JSON.stringify({ Id: resolvedId, id: resolvedId }),
@@ -289,7 +302,7 @@ export async function deleteRecordsByChittiId(chittiId: string) {
 
           // Strategy 2: DELETE with path parameter
           try {
-            await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${resolvedId}`, {
+            await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${resolvedId}`, {
               method: "DELETE",
               headers,
             });
@@ -313,7 +326,7 @@ export async function deleteRecord(tableName: string, uniqueField: string, uniqu
       if (resolvedId) {
         const tableId = await getTableId(tableName);
         const target = tableId || tableName;
-        await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${resolvedId}`, {
+        await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${resolvedId}`, {
           method: "DELETE",
           headers,
         });
@@ -331,7 +344,7 @@ export async function ensureTableExists(tableName: string, columns: any[]) {
     
     if (!existing) {
       console.log(`Creating table ${tableName} in NocoDB base ${BASE_ID}...`);
-      const res = await fetch(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, {
+      const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -348,7 +361,7 @@ export async function ensureTableExists(tableName: string, columns: any[]) {
     if (existing && existing.id) {
       tableIdCache.set(tableName, existing.id);
       if (existing.table_name) tableIdCache.set(existing.table_name, existing.id);
-      const colRes = await fetch(`${NOCODB_URL}/api/v1/db/meta/tables/${existing.id}/columns`, { headers });
+      const colRes = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/meta/tables/${existing.id}/columns`, { headers });
       const colData = await colRes.json() as any;
       const existingCols = colData.list || [];
       const existingColNames = new Set(existingCols.map((c: any) => c.column_name));
@@ -357,7 +370,7 @@ export async function ensureTableExists(tableName: string, columns: any[]) {
         if (!existingColNames.has(col.column_name)) {
           console.log(`Adding missing column '${col.column_name}' to table '${tableName}'...`);
           try {
-            await fetch(`${NOCODB_URL}/api/v1/db/meta/tables/${existing.id}/columns`, {
+            await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/meta/tables/${existing.id}/columns`, {
               method: "POST",
               headers,
               body: JSON.stringify({
