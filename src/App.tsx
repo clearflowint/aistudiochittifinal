@@ -25,7 +25,7 @@ export default function App() {
 
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [currentTenantId, setCurrentTenantId] = useState<string>(() => {
-    return localStorage.getItem("clearflow_tenant_id") || "mahirocks66@gmail.com";
+    return localStorage.getItem("clearflow_tenant_id") || "";
   });
 
   const [mathTemplates, setMathTemplates] = useState<MathTemplate[]>([]);

@@ -74,7 +74,7 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
             <Mail className="w-3.5 h-3.5 text-sky-400 shrink-0" />
             <span className="text-[10px] text-slate-400 font-medium">Manager:</span>
             <span className="text-white font-semibold truncate max-w-[200px]">
-              {currentTenantId || "mahirocks66@gmail.com"}
+              {currentTenantId || "Not Logged In"}
             </span>
           </div>
 

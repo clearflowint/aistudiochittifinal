@@ -304,21 +304,29 @@ async function startServer() {
       console.error("Failed to refresh tenants from NocoDB:", err);
     }
 
-    const tenant = tenants.find(t => (t.tenant_id || "").toLowerCase() === cleanEmail);
+    const tenant = tenants.find(t => {
+      const tid = (t.tenant_id || t.email || "").toLowerCase();
+      return tid === cleanEmail;
+    });
 
-    if (!tenant) {
+    const isAuthorizedStatic = authorizedManagerEmails.some(e => e.toLowerCase() === cleanEmail);
+
+    if (!tenant && !isAuthorizedStatic) {
+      // Auto-register new tenant if desired or allow access if valid email
       return res.json({ 
         authorized: false, 
         message: "Access Denied. Tenant ID not authorized in system whitelist. Please contact ClearFlow Automations +919652169196." 
       });
     }
 
-    const tenantStatus = (tenant.status || "active").toLowerCase();
-    if (tenantStatus === "suspended" || tenantStatus === "inactive") {
-      return res.json({ 
-        authorized: false, 
-        message: "Account Suspended. Manager cannot access existing chittis and database. Please contact ClearFlow Automations +919652169196." 
-      });
+    if (tenant) {
+      const tenantStatus = (tenant.status || "active").toLowerCase();
+      if (tenantStatus === "suspended" || tenantStatus === "inactive") {
+        return res.json({ 
+          authorized: false, 
+          message: "Account Suspended. Manager cannot access existing chittis and database. Please contact ClearFlow Automations +919652169196." 
+        });
+      }
     }
 
     res.json({ authorized: true, email: cleanEmail });

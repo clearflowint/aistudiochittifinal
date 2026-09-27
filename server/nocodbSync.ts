@@ -82,7 +82,16 @@ export async function getAllRecords(tableName: string) {
     const target = tableId || tableName;
     const res = await fetch(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?limit=1000`, { headers });
     const data = await res.json() as any;
-    return data.list || [];
+    const list = data.list || [];
+    return list.map((r: any) => {
+      if (tableName === "tenants") {
+        const tenant_id = r.tenant_id || r.TenantId || r.tenantId || r.email || r.Email || r.Id || r.id;
+        const name = r.name || r.Name || r.fullName || tenant_id;
+        const status = r.status || r.Status || "active";
+        return { ...r, tenant_id, name, status };
+      }
+      return r;
+    });
   } catch (err) {
     console.error(`Error fetching records from ${tableName}:`, err);
     return [];
