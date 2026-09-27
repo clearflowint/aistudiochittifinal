@@ -60,7 +60,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
     try {
       const client = google.accounts.oauth2.initTokenClient({
-        client_id: "248057622784-nine3ac3upgkv5tvq716ov10l1tf6o3e.apps.googleusercontent.com",
+        client_id: "248057622784-g0n22s5ffavu8ot226ejt0nuvdmsukmo.apps.googleusercontent.com",
         scope: "email profile",
         callback: async (response: any) => {
           if (response && response.access_token) {

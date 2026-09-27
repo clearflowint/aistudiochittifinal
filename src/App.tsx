@@ -31,6 +31,7 @@ export default function App() {
   const [activeMonth, setActiveMonth] = useState<number>(1);
   const [details, setDetails] = useState<ChittiDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   // Request fingerprinting ref to prevent cross-chitti data leakage / race conditions
   const fetchFingerprintRef = useRef<string>("");
@@ -114,12 +115,14 @@ export default function App() {
   }, [currentChittiId, chittis]);
 
   // Load chitti details with strict fingerprinting guard to prevent race conditions / cache contamination
-  const fetchDetails = () => {
+  const fetchDetails = (silent = false) => {
     if (!currentChittiId || !currentTenantId) return;
     const fingerprint = `${currentTenantId}:${currentChittiId}:${activeMonth}`;
     fetchFingerprintRef.current = fingerprint;
 
-    setLoading(true);
+    if (!silent) setLoading(true);
+    else setIsRefreshing(true);
+
     fetch(`/api/chittis/${currentChittiId}/details?tenant_id=${currentTenantId}&month=${activeMonth}`)
       .then((res) => res.json())
       .then((data) => {
@@ -127,12 +130,14 @@ export default function App() {
         if (fetchFingerprintRef.current === fingerprint) {
           setDetails(data);
           setLoading(false);
+          setIsRefreshing(false);
         }
       })
       .catch((err) => {
         console.error("Error fetching chitti details:", err);
         if (fetchFingerprintRef.current === fingerprint) {
           setLoading(false);
+          setIsRefreshing(false);
         }
       });
   };
@@ -157,7 +162,7 @@ export default function App() {
       });
       if (res.ok) {
         setRecordPaymentShare(null);
-        fetchDetails();
+        fetchDetails(true); // Silent refresh to update card area instantly without full loader
       }
     } catch (err) {
       console.error("Error recording payment:", err);
@@ -181,14 +186,14 @@ export default function App() {
       });
       if (res.ok) {
         setAssignWinnerShare(null);
-        fetchDetails();
+        fetchDetails(true); // Silent refresh
       } else {
         console.error("Failed to update winner in backend, status:", res.status);
-        fetchDetails();
+        fetchDetails(true);
       }
     } catch (err) {
       console.error("Error assigning winner:", err);
-      fetchDetails();
+      fetchDetails(true);
     }
   };
 
@@ -590,18 +595,29 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="flex-1 w-full max-w-2xl mx-auto px-3 sm:px-4 py-4 space-y-4">
-        {/* Search Bar */}
-        <div className="relative w-full">
-          <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
-            <Search className="w-4 h-4" />
-          </span>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by member name, share ID, or phone..."
-            className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-          />
+        {/* Search Bar & Manual Refresh Button */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+              <Search className="w-4 h-4" />
+            </span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by member name, share ID, or phone..."
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+          </div>
+          <button
+            onClick={() => fetchDetails(true)}
+            disabled={isRefreshing}
+            className="bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 shadow-sm transition shrink-0 cursor-pointer"
+            title="Refresh share cards from NocoDB"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isRefreshing ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
         </div>
 
         {/* Status Filter Pills */}
@@ -649,7 +665,25 @@ export default function App() {
         </div>
 
         {/* Feed of Share ID Cards */}
-        {loading ? (
+        {chittis.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-4 shadow-sm">
+            <div className="w-14 h-14 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold shadow-inner">
+              ⚡
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">No Chittis Created Yet</h2>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                Get started by creating your first chitti group. Set up members, monthly dues, commission rules, and automated tracking instantly.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsCreateChittiOpen(true)}
+              className="bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-bold py-3 px-6 rounded-xl text-xs inline-flex items-center gap-2 shadow-lg shadow-sky-600/30 transition cursor-pointer"
+            >
+              <span>+ Create Your First Chitti</span>
+            </button>
+          </div>
+        ) : loading ? (
           <div className="py-16 text-center flex flex-col items-center justify-center gap-2 text-slate-500">
             <RefreshCw className="w-6 h-6 animate-spin text-sky-600" />
             <p className="text-xs">Computing chitti ledger and math formulas...</p>
@@ -665,7 +699,7 @@ export default function App() {
               <ShareCard
                 key={share.share_id}
                 share={share}
-                chitti={details!.chitti}
+                chitti={details?.chitti || ({} as any)}
                 activeMonth={activeMonth}
                 onRecordPayment={setRecordPaymentShare}
                 onAssignWinner={setAssignWinnerShare}

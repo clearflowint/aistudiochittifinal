@@ -749,32 +749,57 @@ async function startServer() {
   });
 
   // Chitti Expenses Endpoints
-  app.get("/api/chittis/:chitti_id/expenses", (req, res) => {
+  app.get("/api/chittis/:chitti_id/expenses", async (req, res) => {
     const { chitti_id } = req.params;
     const tenant_id = req.query.tenant_id as string;
     if (!tenant_id) {
       return res.status(400).json({ error: "tenant_id is required" });
     }
-    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id === tenant_id);
-    if (!chitti) {
-      return res.status(404).json({ error: "Chitti not found or tenant isolation mismatch" });
+
+    try {
+      const dbExp = await getAllRecords("chittiExpenses");
+      if (dbExp && dbExp.length > 0) {
+        chittiExpenses.splice(0, chittiExpenses.length, ...dbExp);
+      }
+      const dbChittis = await getAllRecords("chittis");
+      if (dbChittis && dbChittis.length > 0) {
+        chittis.splice(0, chittis.length, ...dbChittis);
+      }
+    } catch (err) {
+      console.error("Failed to sync expenses from NocoDB:", err);
     }
-    const list = chittiExpenses.filter(e => e.chitti_id === chitti_id && e.tenant_id === tenant_id);
-    const total_credit = list.filter(e => e.type === 'credit').reduce((s, e) => s + e.amount, 0);
-    const total_debit = list.filter(e => e.type === 'debit').reduce((s, e) => s + e.amount, 0);
+
+    const chitti = chittis.find(c => String(c.chitti_id) === String(chitti_id));
+    if (!chitti) {
+      return res.status(404).json({ error: "Chitti not found" });
+    }
+    const list = chittiExpenses.filter(e => String(e.chitti_id) === String(chitti_id));
+    const total_credit = list.filter(e => e.type === 'credit').reduce((s, e) => s + Number(e.amount || 0), 0);
+    const total_debit = list.filter(e => e.type === 'debit').reduce((s, e) => s + Number(e.amount || 0), 0);
     const net_expenses = total_credit - total_debit;
     res.json({ expenses: list, total_credit, total_debit, net_expenses });
   });
 
-  app.post("/api/chittis/:chitti_id/expenses", (req, res) => {
+  app.post("/api/chittis/:chitti_id/expenses", async (req, res) => {
+    console.log("POST /api/chittis/:chitti_id/expenses received:", req.params, req.body);
     const { chitti_id } = req.params;
     const { tenant_id, title, type, amount } = req.body;
     if (!tenant_id || !title || !type || amount === undefined) {
+      console.error("POST expense validation failed:", { tenant_id, title, type, amount });
       return res.status(400).json({ error: "Missing required fields" });
     }
-    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id === tenant_id);
+
+    try {
+      const dbChittis = await getAllRecords("chittis");
+      if (dbChittis && dbChittis.length > 0) {
+        chittis.splice(0, chittis.length, ...dbChittis);
+      }
+    } catch (err) {}
+
+    const chitti = chittis.find(c => String(c.chitti_id) === String(chitti_id));
     if (!chitti) {
-      return res.status(404).json({ error: "Chitti not found or tenant isolation mismatch" });
+      console.error("POST expense chitti not found:", chitti_id, "Available chittis:", chittis.map(c => c.chitti_id));
+      return res.status(404).json({ error: "Chitti not found" });
     }
     const newExp: ChittiExpense = {
       expense_id: "exp_" + Math.random().toString(36).substring(2, 9),
@@ -786,19 +811,28 @@ async function startServer() {
       date: new Date().toISOString().split("T")[0],
     };
     chittiExpenses.push(newExp);
-    insertRecord("chittiExpenses", newExp).catch(err => console.error("NocoDB chittiExpense sync error:", err));
+    await insertRecord("chittiExpenses", newExp).catch(err => console.error("NocoDB chittiExpense sync error:", err));
+    console.log("Expense successfully added:", newExp);
     res.json(newExp);
   });
 
-  app.delete("/api/chittis/expenses/:expense_id", (req, res) => {
+  app.delete("/api/chittis/expenses/:expense_id", async (req, res) => {
     const { expense_id } = req.params;
     const tenant_id = req.body.tenant_id || req.query.tenant_id;
-    const idx = chittiExpenses.findIndex(e => e.expense_id === expense_id && (!tenant_id || e.tenant_id === tenant_id));
+
+    try {
+      const dbExp = await getAllRecords("chittiExpenses");
+      if (dbExp && dbExp.length > 0) {
+        chittiExpenses.splice(0, chittiExpenses.length, ...dbExp);
+      }
+    } catch (err) {}
+
+    const idx = chittiExpenses.findIndex(e => String(e.expense_id) === String(expense_id));
     if (idx === -1) {
-      return res.status(404).json({ error: "Expense not found or tenant isolation mismatch" });
+      return res.status(404).json({ error: "Expense not found" });
     }
     const removed = chittiExpenses.splice(idx, 1)[0];
-    deleteRecord("chittiExpenses", "expense_id", expense_id).catch(err => console.error("NocoDB chittiExpense delete error:", err));
+    await deleteRecord("chittiExpenses", "expense_id", expense_id).catch(err => console.error("NocoDB chittiExpense delete error:", err));
     res.json(removed);
   });
 

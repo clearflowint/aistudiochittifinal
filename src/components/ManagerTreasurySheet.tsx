@@ -58,9 +58,10 @@ export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
       .catch((err) => console.error("Error fetching chitti others:", err));
   }, [chittiId, tenantId]);
 
-  const handleAddExpense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!expTitle || !expAmount) return;
+  const handleAddExpense = async (e: React.FormEvent | React.MouseEvent) => {
+    e.preventDefault?.();
+    if (!expTitle.trim() || !expAmount) return;
+    if (!chittiId || !tenantId) return;
     try {
       const res = await fetch(`/api/chittis/${chittiId}/expenses`, {
         method: "POST",
@@ -240,8 +241,9 @@ export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
                     className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-purple-500 w-full"
                   />
                   <button
-                    type="submit"
-                    className="bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white p-1.5 rounded-lg shrink-0 transition"
+                    type="button"
+                    onClick={handleAddExpense}
+                    className="bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white p-1.5 rounded-lg shrink-0 transition cursor-pointer"
                     title="Add Entry"
                   >
                     <Plus className="w-4 h-4" />
