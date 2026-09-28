@@ -64,10 +64,7 @@ interface ChittiExpense {
   date: string;
 }
 
-let chittiExpenses: ChittiExpense[] = [
-  { expense_id: "exp_1", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", title: "Stationery & Books", type: "debit", amount: 1500, date: "2025-01-10" },
-  { expense_id: "exp_2", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", title: "Sponsor Refund", type: "credit", amount: 500, date: "2025-01-15" },
-];
+let chittiExpenses: ChittiExpense[] = [];
 
 // Math Formula Templates Registry (Single Incremental Template - Extensible via Formula ID / Python modules)
 const mathTemplates: MathTemplate[] = [
@@ -93,89 +90,9 @@ const authorizedManagerEmails: string[] = [
   "clearflowint@gmail.com"
 ];
 
-let chittis: ChittiMaster[] = [
-  {
-    chitti_id: "chit_20_1lakh",
-    tenant_id: "mahirocks66@gmail.com",
-    formula_id: "standard_chit_v1",
-    name: "Apex 20-Month ₹1 Lakh Chitti",
-    start_date: "2025-01-01",
-    total_members: 20,
-    total_months: 20,
-    u_due: 5000,
-    d_due: 6000,
-    commission: 2000,
-  },
-  {
-    chitti_id: "chit_10_50k",
-    tenant_id: "mahirocks66@gmail.com",
-    formula_id: "standard_chit_v1",
-    name: "Apex Express 10-Month ₹50k",
-    start_date: "2026-03-01",
-    total_members: 10,
-    total_months: 10,
-    u_due: 5000,
-    d_due: 5800,
-    commission: 1000,
-  },
-  {
-    chitti_id: "chit_zenith_1",
-    tenant_id: "manager.apex@chits.com",
-    formula_id: "standard_chit_v1",
-    name: "Zenith Gold 20-Month Chitti",
-    start_date: "2026-01-01",
-    total_members: 20,
-    total_months: 20,
-    u_due: 10000,
-    d_due: 12000,
-    commission: 5000,
-  }
-];
-
-let shares: MemberShare[] = [
-  // Apex 20-month (chit_20_1lakh)
-  { share_id: "SH-101", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Rajesh Kumar", phone: "9876543210", win_month: 1 },
-  { share_id: "SH-102", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Priya Sharma", phone: "9876543211", win_month: 2 },
-  { share_id: "SH-103", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Amit Patel", phone: "9876543212", win_month: 3 },
-  { share_id: "SH-104", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Sunita Rao", phone: "9876543213", win_month: 4 },
-  { share_id: "SH-105", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Vikram Singh", phone: "9876543214", win_month: 5 },
-  { share_id: "SH-106", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Neha Gupta", phone: "9876543215", win_month: null },
-  { share_id: "SH-107", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Suresh Menon", phone: "9876543216", win_month: null },
-  { share_id: "SH-108", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Ananya Iyer", phone: "9876543217", win_month: null },
-  { share_id: "SH-109", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Karan Johar", phone: "9876543218", win_month: null },
-  { share_id: "SH-110", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Deepika Sen", phone: "9876543219", win_month: null },
-  { share_id: "SH-111", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Manoj Bajpai", phone: "9876543220", win_month: null },
-  { share_id: "SH-112", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Kavita Das", phone: "9876543221", win_month: null },
-  { share_id: "SH-113", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Rahul Dravid", phone: "9876543222", win_month: null },
-  { share_id: "SH-114", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Smriti Mandhana", phone: "9876543223", win_month: null },
-  { share_id: "SH-115", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Harsh Vardhan", phone: "9876543224", win_month: null },
-  { share_id: "SH-116", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Divya Khosla", phone: "9876543225", win_month: null },
-  { share_id: "SH-117", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Nikhil Kamath", phone: "9876543226", win_month: null },
-  { share_id: "SH-118", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Falguni Nayar", phone: "9876543227", win_month: null },
-  { share_id: "SH-119", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Kiran Mazumdar", phone: "9876543228", win_month: null },
-  { share_id: "SH-120", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", member_name: "Sachin Tendulkar", phone: "9876543229", win_month: null },
-
-  // Zenith Chitti
-  { share_id: "ZSH-01", chitti_id: "chit_zenith_1", tenant_id: "manager.apex@chits.com", member_name: "Aditya Roy", phone: "9123456780", win_month: 1 },
-  { share_id: "ZSH-02", chitti_id: "chit_zenith_1", tenant_id: "manager.apex@chits.com", member_name: "Natasha Romanoff", phone: "9123456781", win_month: 2 },
-  { share_id: "ZSH-03", chitti_id: "chit_zenith_1", tenant_id: "manager.apex@chits.com", member_name: "Bruce Banner", phone: "9123456782", win_month: null },
-  { share_id: "ZSH-04", chitti_id: "chit_zenith_1", tenant_id: "manager.apex@chits.com", member_name: "Tony Stark", phone: "9123456783", win_month: null },
-  { share_id: "ZSH-05", chitti_id: "chit_zenith_1", tenant_id: "manager.apex@chits.com", member_name: "Steve Rogers", phone: "9123456784", win_month: null },
-];
-
-let transactions: Transaction[] = [
-  { tx_id: "tx_1", share_id: "SH-101", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 6000, date_paid: "2025-01-05", payment_mode: "UPI" },
-  { tx_id: "tx_2", share_id: "SH-101", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 6000, date_paid: "2025-02-05", payment_mode: "UPI" },
-  { tx_id: "tx_3", share_id: "SH-101", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 6000, date_paid: "2025-03-05", payment_mode: "Bank" },
-  { tx_id: "tx_4", share_id: "SH-101", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 6000, date_paid: "2025-04-05", payment_mode: "Cash" },
-  { tx_id: "tx_5", share_id: "SH-101", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 6000, date_paid: "2025-05-05", payment_mode: "UPI" },
-  { tx_id: "tx_6", share_id: "SH-102", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 5000, date_paid: "2025-01-08", payment_mode: "UPI" },
-  { tx_id: "tx_7", share_id: "SH-102", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 6000, date_paid: "2025-02-10", payment_mode: "UPI" },
-  { tx_id: "tx_8", share_id: "SH-102", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 6000, date_paid: "2025-03-10", payment_mode: "UPI" },
-  { tx_id: "tx_9", share_id: "SH-106", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 5000, date_paid: "2025-01-10", payment_mode: "Cash" },
-  { tx_id: "tx_10", share_id: "SH-106", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 5000, date_paid: "2025-02-12", payment_mode: "UPI" },
-  { tx_id: "tx_11", share_id: "SH-106", chitti_id: "chit_20_1lakh", tenant_id: "mahirocks66@gmail.com", amount: 5000, date_paid: "2025-03-15", payment_mode: "UPI" },
-];
+let chittis: ChittiMaster[] = [];
+let shares: MemberShare[] = [];
+let transactions: Transaction[] = [];
 
 // Isolated calculation helper based on formula_id
 // Isolated calculation helper mapped by formula_id
