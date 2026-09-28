@@ -179,15 +179,51 @@ export async function insertRecord(tableName: string, record: any) {
     const tableId = await getTableId(tableName);
     const target = tableId || tableName;
     const cleaned = cleanRecord(tableName, record);
+    delete cleaned.Id;
+    delete cleaned.id;
     const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
       method: "POST",
       headers,
       body: JSON.stringify(cleaned),
     });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Error inserting into NocoDB ${tableName} (${res.status}):`, errText);
+      return null;
+    }
     const data = await res.json();
     return data;
   } catch (err) {
     console.error(`Error inserting record into NocoDB table ${tableName}:`, err);
+    return null;
+  }
+}
+
+export async function insertBulkRecords(tableName: string, records: any[]) {
+  if (!records || records.length === 0) return [];
+  try {
+    const tableId = await getTableId(tableName);
+    const target = tableId || tableName;
+    const cleaned = records.map(r => {
+      const c = cleanRecord(tableName, r);
+      delete c.Id;
+      delete c.id;
+      return c;
+    });
+    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/bulk/v1/${BASE_ID}/${target}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(cleaned),
+    }, 15000);
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Error bulk inserting into NocoDB ${tableName} (${res.status}):`, errText);
+      return null;
+    }
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.error(`Error bulk inserting into NocoDB table ${tableName}:`, err);
     return null;
   }
 }

@@ -3,7 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { spawnSync } from "child_process";
 import fs from "fs";
-import { checkNocoDBConnection, initializeNocoDBTables, getNocoDBTables, insertRecord, updateRecord, upsertRecord, deleteRecordsByChittiId, deleteRecord, getAllRecords } from "./server/nocodbSync";
+import { checkNocoDBConnection, initializeNocoDBTables, getNocoDBTables, insertRecord, insertBulkRecords, updateRecord, upsertRecord, deleteRecordsByChittiId, deleteRecord, getAllRecords } from "./server/nocodbSync";
 
 
 interface Tenant {
@@ -346,12 +346,22 @@ async function startServer() {
     res.json(mathTemplates);
   });
 
-  app.get("/api/chittis", (req, res) => {
+  app.get("/api/chittis", async (req, res) => {
     const tenant_id = req.query.tenant_id as string;
     if (!tenant_id) {
       return res.status(400).json({ error: "tenant_id is required" });
     }
     const cleanReq = tenant_id.trim().toLowerCase();
+
+    try {
+      const dbChittis = await getAllRecords("chittis");
+      if (dbChittis && dbChittis.length > 0) {
+        chittis.splice(0, chittis.length, ...dbChittis);
+      }
+    } catch (err) {
+      console.error("Failed to sync chittis from NocoDB on GET:", err);
+    }
+
     const filtered = chittis.filter(c => (c.tenant_id || "").trim().toLowerCase() === cleanReq);
     res.json(filtered);
   });
@@ -362,6 +372,7 @@ async function startServer() {
       return res.status(400).json({ error: "tenant_id and name are required" });
     }
 
+    const cleanTenantId = String(tenant_id).trim().toLowerCase();
     const tMembers = Number(total_members) || 20;
     const tMonths = Number(total_months) || 20;
     const uDue = Number(u_due) || 5000;
@@ -388,9 +399,9 @@ async function startServer() {
 
     const newChitti: ChittiMaster = {
       chitti_id: "chit_" + Math.random().toString(36).substring(2, 9),
-      tenant_id,
+      tenant_id: cleanTenantId,
       formula_id: fId,
-      name,
+      name: String(name).trim(),
       start_date: startDate,
       total_members: tMembers,
       total_months: tMonths,
@@ -405,6 +416,7 @@ async function startServer() {
 
     try {
       const resRaw: any = await insertRecord("chittis", newChitti);
+      console.log(`NocoDB chitti insert result for ${newChitti.chitti_id}:`, resRaw);
       if (resRaw && (resRaw.Id || resRaw.id)) {
         (newChitti as any).Id = resRaw.Id || resRaw.id;
       }
@@ -412,11 +424,12 @@ async function startServer() {
       console.error("NocoDB chitti sync error:", err);
     }
 
+    const newSharesList: any[] = [];
     for (let i = 1; i <= newChitti.total_members; i++) {
       const newShare = {
         share_id: `SH-${String(i).padStart(3, '0')}`,
         chitti_id: newChitti.chitti_id,
-        tenant_id,
+        tenant_id: cleanTenantId,
         member_name: `Member ${i}`,
         phone: "+910000000000",
         win_month: null,
@@ -427,14 +440,15 @@ async function startServer() {
         advance_amount: 0,
       };
       shares.push(newShare);
-      try {
-        const resRaw: any = await insertRecord("shares", newShare);
-        if (resRaw && (resRaw.Id || resRaw.id)) {
-          (newShare as any).Id = resRaw.Id || resRaw.id;
-        }
-      } catch (err) {
-        console.error("NocoDB share sync error:", err);
-      }
+      newSharesList.push(newShare);
+    }
+
+    // Fast single bulk insert for all shares instead of 20 sequential calls
+    try {
+      await insertBulkRecords("shares", newSharesList);
+      console.log(`Successfully bulk-inserted ${newSharesList.length} shares into NocoDB for ${newChitti.chitti_id}`);
+    } catch (err) {
+      console.error("NocoDB bulk shares sync error:", err);
     }
 
     res.json(newChitti);

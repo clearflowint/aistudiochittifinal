@@ -516,25 +516,35 @@ export default function App() {
     d_due: number;
     commission: number;
   }) => {
+    const activeTenant = (chittiData.tenant_id || currentTenantId || managerEmail || "").trim().toLowerCase();
+    if (!activeTenant) {
+      showToast("Error: Manager email/tenant not detected. Please sign in again.");
+      return;
+    }
     try {
       const res = await fetch("/api/chittis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...chittiData,
+          tenant_id: activeTenant,
           formula_id: currentFormulaId,
         }),
       });
+      const data = await res.json();
       if (res.ok) {
-        const newChitti = await res.json();
         setIsCreateChittiOpen(false);
-        const chittisRes = await fetch(`/api/chittis?tenant_id=${currentTenantId}`);
+        showToast(`Chitti "${data.name}" successfully created and saved to database!`);
+        const chittisRes = await fetch(`/api/chittis?tenant_id=${activeTenant}`);
         const chittisData = await chittisRes.json();
         setChittis(chittisData);
-        setCurrentChittiId(newChitti.chitti_id);
+        setCurrentChittiId(data.chitti_id);
+      } else {
+        showToast(data.error || "Failed to create chitti. Please check fields.");
       }
     } catch (err) {
       console.error("Error creating chitti:", err);
+      showToast("Network error creating chitti. Please check connection.");
     }
   };
 
@@ -874,7 +884,7 @@ export default function App() {
 
       {isCreateChittiOpen && (
         <CreateChittiModal
-          currentTenantId={currentTenantId}
+          currentTenantId={currentTenantId || managerEmail || ""}
           onClose={() => setIsCreateChittiOpen(false)}
           onSubmit={handleCreateChitti}
         />
