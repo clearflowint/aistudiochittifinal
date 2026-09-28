@@ -1,5 +1,3 @@
-import fetch from "node-fetch";
-
 const NOCODB_URL = process.env.NOCODB_URL || "https://nocodbclearflow.duckdns.org";
 const NOCODB_TOKEN = process.env.NOCODB_TOKEN || "nc_pat_UNZlmQBfV7PlVv3aNm75bo1gW67aVvd2lC6Xv1VR";
 const BASE_ID = process.env.NOCODB_BASE_ID || "p4277q2gv93p704";
@@ -75,7 +73,7 @@ export async function getNocoDBTables() {
   }
 }
 
-async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000) {
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 15000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
