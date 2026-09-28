@@ -137,18 +137,24 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
           <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold flex items-center gap-0.5">
             <Calendar className="w-3 h-3 text-sky-400" /> Active Month
           </span>
-          <span className="text-sm font-bold text-sky-400 mt-0.5">
-            M{activeMonth}<span className="text-xs text-slate-500 font-normal">/{totalMonths}</span>
-          </span>
+          {currentChittiId ? (
+            <span className="text-sm font-bold text-sky-400 mt-0.5">
+              M{activeMonth}<span className="text-xs text-slate-500 font-normal">/{totalMonths}</span>
+            </span>
+          ) : (
+            <span className="text-xs font-medium text-slate-400 mt-0.5">
+              No Chitti Active
+            </span>
+          )}
         </div>
 
         {/* Month Payout */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-lg p-1.5 flex flex-col items-center justify-center">
           <span className="text-[10px] text-emerald-400 uppercase tracking-wider font-semibold flex items-center gap-0.5">
-            <DollarSign className="w-3 h-3" /> Payout M{activeMonth}
+            <DollarSign className="w-3 h-3" /> {currentChittiId ? `Payout M${activeMonth}` : "Payout"}
           </span>
           <span className="text-sm font-bold text-emerald-300 mt-0.5">
-            ₹{monthPayout?.toLocaleString("en-IN") || 0}
+            {currentChittiId ? `₹${monthPayout?.toLocaleString("en-IN") || 0}` : "—"}
           </span>
         </div>
 
@@ -158,7 +164,7 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
             <AlertTriangle className="w-3 h-3" /> Arrears
           </span>
           <span className="text-sm font-bold text-rose-300 mt-0.5">
-            ₹{totalPending?.toLocaleString("en-IN") || 0}
+            {currentChittiId ? `₹${totalPending?.toLocaleString("en-IN") || 0}` : "—"}
           </span>
         </div>
       </div>

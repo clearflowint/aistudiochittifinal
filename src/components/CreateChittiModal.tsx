@@ -77,12 +77,13 @@ export const CreateChittiModal: React.FC<CreateChittiModalProps> = ({
             <input
               type="date"
               value={startDate}
+              max={new Date().toISOString().split("T")[0]}
               onChange={(e) => setStartDate(e.target.value)}
               required
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
             />
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Supports ongoing or previously running chittis (e.g., started years ago).
+              Chitti start date cannot be in the future.
             </p>
           </div>
 
