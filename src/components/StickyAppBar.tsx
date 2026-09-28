@@ -49,10 +49,18 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
     <header className="relative bg-slate-900 text-white shadow-lg border-b border-slate-800">
       {/* Top Branding Bar */}
       <div className="bg-slate-950 px-3 py-1 flex items-center justify-between border-b border-slate-800/80 text-[11px]">
-        <span className="font-bold tracking-wide text-slate-300 flex items-center gap-1.5">
-          <Calendar className="w-3.5 h-3.5 text-sky-400" />
-          {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="font-bold tracking-wide text-slate-300 flex items-center gap-1.5">
+            <Calendar className="w-3.5 h-3.5 text-sky-400" />
+            {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+          </span>
+          <button
+            onClick={onOpenCreateChitti}
+            className="bg-sky-600 hover:bg-sky-500 text-white px-2 py-0.5 rounded font-medium text-[10px] transition shadow-sm cursor-pointer"
+          >
+            + New Chitti
+          </button>
+        </div>
         <div className="flex items-center gap-3">
           <button
             onClick={onOpenNocoDB}
@@ -77,13 +85,6 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
               {currentTenantId || "Not Logged In"}
             </span>
           </div>
-
-          <button
-            onClick={onOpenCreateChitti}
-            className="shrink-0 bg-sky-600 hover:bg-sky-500 text-white px-2.5 py-1.5 rounded-lg font-medium text-xs transition shadow-sm"
-          >
-            + New Chitti
-          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

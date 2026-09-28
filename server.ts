@@ -304,12 +304,19 @@ async function startServer() {
       console.error("Failed to refresh tenants from NocoDB:", err);
     }
 
+    const isWhitelisted = authorizedManagerEmails.map(e => e.toLowerCase()).includes(cleanEmail);
     let tenant = tenants.find(t => {
       const tid = (t.tenant_id || (t as any).email || "").toLowerCase();
       return tid === cleanEmail;
     });
 
-    // If not found in memory, auto-register this valid email as an active tenant
+    if (!isWhitelisted && !tenant) {
+      return res.json({ 
+        authorized: false, 
+        message: "Email not whitelisted / authorized. Please contact ClearFlow Automations (+919652169196) to register your manager account." 
+      });
+    }
+
     if (!tenant) {
       const newTenant = {
         tenant_id: cleanEmail,
@@ -318,8 +325,11 @@ async function startServer() {
       };
       tenants.push(newTenant);
       tenant = newTenant;
-      // Try syncing to NocoDB in background
-      upsertRecord("tenants", "tenant_id", cleanEmail, newTenant).catch(() => {});
+      try {
+        await upsertRecord("tenants", "tenant_id", cleanEmail, newTenant);
+      } catch (err) {
+        console.error("Tenant upsert error:", err);
+      }
     }
 
     const tenantStatus = (tenant.status || "active").toLowerCase();
@@ -351,7 +361,7 @@ async function startServer() {
     res.json(filtered);
   });
 
-  app.post("/api/chittis", (req, res) => {
+  app.post("/api/chittis", async (req, res) => {
     const { tenant_id, formula_id, name, start_date, total_members, total_months, u_due, d_due, commission } = req.body;
     if (!tenant_id || !name) {
       return res.status(400).json({ error: "tenant_id and name are required" });
@@ -397,11 +407,15 @@ async function startServer() {
       payout_schedule: JSON.stringify(scheduleArr),
     };
     chittis.push(newChitti);
-    insertRecord("chittis", newChitti).then((resRaw: any) => {
+
+    try {
+      const resRaw: any = await insertRecord("chittis", newChitti);
       if (resRaw && (resRaw.Id || resRaw.id)) {
         (newChitti as any).Id = resRaw.Id || resRaw.id;
       }
-    }).catch(err => console.error("NocoDB chitti sync error:", err));
+    } catch (err) {
+      console.error("NocoDB chitti sync error:", err);
+    }
 
     for (let i = 1; i <= newChitti.total_members; i++) {
       const newShare = {
@@ -418,11 +432,14 @@ async function startServer() {
         advance_amount: 0,
       };
       shares.push(newShare);
-      insertRecord("shares", newShare).then((resRaw: any) => {
+      try {
+        const resRaw: any = await insertRecord("shares", newShare);
         if (resRaw && (resRaw.Id || resRaw.id)) {
           (newShare as any).Id = resRaw.Id || resRaw.id;
         }
-      }).catch(err => console.error("NocoDB share sync error:", err));
+      } catch (err) {
+        console.error("NocoDB share sync error:", err);
+      }
     }
 
     res.json(newChitti);

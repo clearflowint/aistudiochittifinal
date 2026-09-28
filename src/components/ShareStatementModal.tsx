@@ -60,6 +60,7 @@ export const ShareStatementModal: React.FC<ShareStatementModalProps> = ({
               <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">Chitti Group</span>
               <span className="font-bold text-slate-900 text-sm">{chitti.name}</span>
               <div className="text-[11px] text-slate-500 font-mono mt-0.5">ID: {chitti.chitti_id}</div>
+              <div className="text-[11px] text-slate-600 font-medium mt-1">Start Date: <span className="font-semibold text-slate-900">{chitti.start_date || 'N/A'}</span></div>
             </div>
             <div>
               <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">Manager Account</span>
@@ -67,7 +68,7 @@ export const ShareStatementModal: React.FC<ShareStatementModalProps> = ({
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span className="truncate">{chitti.tenant_id}</span>
               </span>
-              <div className="text-[11px] text-slate-500 mt-0.5">Start Date: {chitti.start_date}</div>
+              <div className="text-[11px] text-slate-600 font-medium mt-1">Report Date: <span className="font-semibold text-slate-900">{new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>
             </div>
           </div>
 
@@ -143,41 +144,6 @@ export const ShareStatementModal: React.FC<ShareStatementModalProps> = ({
               <span className="font-extrabold text-emerald-900 text-sm">₹{drawnPayout.toLocaleString("en-IN")}</span>
             </div>
           )}
-
-          {/* Transactions List */}
-          <div>
-            <h4 className="font-semibold text-slate-800 mb-2 flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-slate-500" /> Payment Transaction History
-            </h4>
-            {(!share.transactions || share.transactions.length === 0) ? (
-              <div className="text-center py-5 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400">
-                No payment transactions recorded yet for this share ID.
-              </div>
-            ) : (
-              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                {share.transactions.map((tx) => (
-                  <div key={tx.tx_id} className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                        <DollarSign className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-800">
-                          +₹{tx.amount.toLocaleString("en-IN")} <span className="text-slate-400 font-normal">({tx.payment_mode})</span>
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          {tx.date_paid} | ID: {tx.tx_id}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="font-mono text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">
-                      Verified
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex justify-between items-center shrink-0">
