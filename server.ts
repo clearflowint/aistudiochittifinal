@@ -447,13 +447,13 @@ async function startServer() {
       }
 
       const calculatedMonth = getCurrentMonth(chitti.start_date, chitti.total_months);
-      if (!chitti.current_month || chitti.last_checked_date !== currentYearMonth) {
+      if (chitti.current_month === undefined || chitti.current_month === null || chitti.current_month !== calculatedMonth || chitti.last_checked_date !== currentYearMonth) {
         chitti.current_month = calculatedMonth;
         chitti.last_checked_date = currentYearMonth;
         await updateRecord("chittis", { chitti_id: chitti.chitti_id, current_month: calculatedMonth, last_checked_date: currentYearMonth }).catch(() => {});
       }
 
-      const t = chitti.current_month || 1;
+      const t = (chitti.current_month !== undefined && chitti.current_month !== null) ? Number(chitti.current_month) : 1;
       const N = Number(chitti.total_members) || 20;
       const U = Number(chitti.u_due) || 5000;
       const D = Number(chitti.d_due) || 6000;
@@ -588,7 +588,7 @@ async function startServer() {
     const chitti = chittis.find(c => c.chitti_id === chitti_id);
     if (!share || !chitti) return;
 
-    const t = chitti.current_month || 1;
+    const t = (chitti.current_month !== undefined && chitti.current_month !== null) ? Number(chitti.current_month) : 1;
     const U = chitti.u_due;
     const D = chitti.d_due;
     const formulaId = chitti.formula_id || "standard_chit_v1";
