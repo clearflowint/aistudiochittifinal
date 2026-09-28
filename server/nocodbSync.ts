@@ -1,7 +1,7 @@
 import fetch from "node-fetch";
 
 const NOCODB_URL = process.env.NOCODB_URL || "https://nocodbclearflow.duckdns.org";
-const NOCODB_TOKEN = process.env.NOCODB_TOKEN || "nc_pat_OTvgsxsMrDRDZUAodsvzofhmo3sEXItrjhNEKEYj";
+const NOCODB_TOKEN = process.env.NOCODB_TOKEN || "nc_pat_UNZlmQBfV7PlVv3aNm75bo1gW67aVvd2lC6Xv1VR";
 const BASE_ID = process.env.NOCODB_BASE_ID || "p4277q2gv93p704";
 
 const headers = {
