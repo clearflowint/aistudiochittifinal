@@ -138,7 +138,13 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
             <Calendar className="w-3 h-3 text-sky-400" /> Active Month
           </span>
           <span className="text-sm font-bold text-sky-400 mt-0.5">
-            M{activeMonth}<span className="text-xs text-slate-500 font-normal">/{totalMonths}</span>
+            {chittis.length === 0 || !currentChittiId ? (
+              <span className="text-slate-400 text-xs font-normal">No Chitti</span>
+            ) : activeMonth === 0 ? (
+              <span className="text-amber-400 text-xs font-bold">Upcoming (M0)</span>
+            ) : (
+              <>M{activeMonth}<span className="text-xs text-slate-500 font-normal">/{totalMonths}</span></>
+            )}
           </span>
         </div>
 

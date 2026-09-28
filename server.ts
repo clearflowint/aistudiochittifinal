@@ -317,7 +317,7 @@ async function startServer() {
     const diffYears = now.getFullYear() - start.getFullYear();
     const diffMonths = now.getMonth() - start.getMonth();
     const elapsed = (diffYears * 12) + diffMonths + 1;
-    const initialCurrentMonth = Math.max(1, Math.min(elapsed, tMonths));
+    const initialCurrentMonth = Math.max(0, Math.min(elapsed, tMonths));
     const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     const newChitti: ChittiMaster = {
@@ -443,7 +443,7 @@ async function startServer() {
         const diffYears = now.getFullYear() - start.getFullYear();
         const diffMonths = now.getMonth() - start.getMonth();
         const elapsed = (diffYears * 12) + diffMonths + 1;
-        return Math.max(1, Math.min(elapsed, totalMonths));
+        return Math.max(0, Math.min(elapsed, totalMonths));
       }
 
       const calculatedMonth = getCurrentMonth(chitti.start_date, chitti.total_months);
