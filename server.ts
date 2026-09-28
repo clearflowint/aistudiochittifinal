@@ -298,19 +298,32 @@ async function startServer() {
     try {
       const dbTenants = await getAllRecords("tenants");
       if (dbTenants && dbTenants.length > 0) {
-        tenants.splice(0, tenants.length, ...dbTenants);
+        for (const dt of dbTenants) {
+          const tid = (dt.tenant_id || (dt as any).email || "").trim().toLowerCase();
+          if (tid) {
+            const existingIndex = tenants.findIndex(t => ((t.tenant_id || (t as any).email || "").trim().toLowerCase() === tid));
+            if (existingIndex >= 0) {
+              tenants[existingIndex] = { ...tenants[existingIndex], ...dt };
+            } else {
+              tenants.push(dt);
+            }
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to refresh tenants from NocoDB:", err);
     }
 
-    const isWhitelisted = authorizedManagerEmails.map(e => e.toLowerCase()).includes(cleanEmail);
     let tenant = tenants.find(t => {
-      const tid = (t.tenant_id || (t as any).email || "").toLowerCase();
+      const tid = (t.tenant_id || (t as any).email || "").trim().toLowerCase();
       return tid === cleanEmail;
     });
 
-    if (!isWhitelisted && !tenant) {
+    const isWhitelisted = authorizedManagerEmails.map(e => e.toLowerCase()).includes(cleanEmail);
+    const tenantStatus = (tenant?.status || "active").trim().toLowerCase();
+    const isActiveTenant = tenant && (tenantStatus === "active" || tenantStatus === "" || !tenantStatus);
+
+    if (!isWhitelisted && !isActiveTenant && !tenant) {
       return res.json({ 
         authorized: false, 
         message: "Email not whitelisted / authorized. Please contact ClearFlow Automations (+919652169196) to register your manager account." 
@@ -332,8 +345,8 @@ async function startServer() {
       }
     }
 
-    const tenantStatus = (tenant.status || "active").toLowerCase();
-    if (tenantStatus === "suspended" || tenantStatus === "inactive") {
+    const currentStatus = (tenant.status || "active").trim().toLowerCase();
+    if (currentStatus === "suspended" || currentStatus === "inactive") {
       return res.json({ 
         authorized: false, 
         message: "Account Suspended. Manager cannot access existing chittis and database. Please contact ClearFlow Automations +919652169196." 
