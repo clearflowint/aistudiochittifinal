@@ -82,13 +82,15 @@ const mathTemplates: MathTemplate[] = [
 const tenants: Tenant[] = [
   { tenant_id: "mahirocks66@gmail.com", name: "Mahi Rocks", status: "active" },
   { tenant_id: "manager.apex@chits.com", name: "Apex Manager", status: "active" },
+  { tenant_id: "clearflowint@gmail.com", name: "ClearFlow International", status: "active" },
 ];
 
 const authorizedManagerEmails: string[] = [
   "mahirocks66@gmail.com",
   "manager.apex@chits.com",
   "admin@clearflow.com",
-  "support@clearflow.com"
+  "support@clearflow.com",
+  "clearflowint@gmail.com"
 ];
 
 let chittis: ChittiMaster[] = [
@@ -295,62 +297,42 @@ async function startServer() {
     }
     const cleanEmail = email.trim().toLowerCase();
 
+    let dbTenants: any[] = [];
     try {
-      const dbTenants = await getAllRecords("tenants");
-      if (dbTenants && dbTenants.length > 0) {
-        for (const dt of dbTenants) {
-          const tid = (dt.tenant_id || (dt as any).email || "").trim().toLowerCase();
-          if (tid) {
-            const existingIndex = tenants.findIndex(t => ((t.tenant_id || (t as any).email || "").trim().toLowerCase() === tid));
-            if (existingIndex >= 0) {
-              tenants[existingIndex] = { ...tenants[existingIndex], ...dt };
-            } else {
-              tenants.push(dt);
-            }
-          }
-        }
-      }
+      dbTenants = await getAllRecords("tenants");
+      console.log("tenant rows fetched from table:", dbTenants.length);
     } catch (err) {
-      console.error("Failed to refresh tenants from NocoDB:", err);
+      console.error("Failed to fetch tenants from NocoDB table:", err);
     }
 
-    let tenant = tenants.find(t => {
-      const tid = (t.tenant_id || (t as any).email || "").trim().toLowerCase();
+    let tenant = dbTenants.find(t => {
+      const tid = (t.tenant_id || t.tenantId || t["Tenant ID"] || t["Tenant Id"] || t.email || "").trim().toLowerCase();
       return tid === cleanEmail;
     });
 
-    const isWhitelisted = authorizedManagerEmails.map(e => e.toLowerCase()).includes(cleanEmail);
-    const tenantStatus = (tenant?.status || "active").trim().toLowerCase();
-    const isActiveTenant = tenant && (tenantStatus === "active" || tenantStatus === "" || !tenantStatus);
-
-    if (!isWhitelisted && !isActiveTenant && !tenant) {
-      return res.json({ 
-        authorized: false, 
-        message: "Email not whitelisted / authorized. Please contact ClearFlow Automations (+919652169196) to register your manager account." 
-      });
-    }
-
-    if (!tenant) {
+    // Check if account in NocoDB table is explicitly suspended or inactive
+    if (tenant) {
+      const status = (tenant.status || "").trim().toLowerCase();
+      if (status === "suspended" || status === "inactive") {
+        return res.json({ 
+          authorized: false, 
+          message: "Account Suspended. Manager cannot access existing chittis and database. Please contact ClearFlow Automations +919652169196." 
+        });
+      }
+    } else {
+      // If not in table yet, auto-register as active tenant in NocoDB table
       const newTenant = {
         tenant_id: cleanEmail,
         name: cleanEmail.split("@")[0],
         status: "active"
       };
-      tenants.push(newTenant);
-      tenant = newTenant;
       try {
         await upsertRecord("tenants", "tenant_id", cleanEmail, newTenant);
+        dbTenants.push(newTenant);
+        tenant = newTenant;
       } catch (err) {
-        console.error("Tenant upsert error:", err);
+        console.error("Tenant auto-upsert error to NocoDB table:", err);
       }
-    }
-
-    const currentStatus = (tenant.status || "active").trim().toLowerCase();
-    if (currentStatus === "suspended" || currentStatus === "inactive") {
-      return res.json({ 
-        authorized: false, 
-        message: "Account Suspended. Manager cannot access existing chittis and database. Please contact ClearFlow Automations +919652169196." 
-      });
     }
 
     res.json({ authorized: true, email: cleanEmail });

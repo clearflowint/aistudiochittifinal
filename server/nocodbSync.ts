@@ -160,6 +160,11 @@ export async function getAllRecords(tableName: string) {
     const tableId = await getTableId(tableName);
     const target = tableId || tableName;
     const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?limit=1000`, { headers });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`NocoDB ${tableName} fetch failed (${res.status}):`, errText);
+      return [];
+    }
     const data = await res.json() as any;
     const list = data.list || [];
     return list.map((r: any) => normalizeRecord(tableName, r));

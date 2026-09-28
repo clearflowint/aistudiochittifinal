@@ -25,14 +25,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       });
       const data = await res.json();
       setLoading(false);
+      if (!res.ok) {
+        onLoginUnauthorized(data.error || data.message || "Login failed");
+        return;
+      }
       if (data.authorized) {
         onLoginSuccess(data.email);
       } else {
-        onLoginUnauthorized(data.message);
+        onLoginUnauthorized(data.message || "Unauthorized account");
       }
     } catch (err) {
       setLoading(false);
       console.error("Auth error:", err);
+      onLoginUnauthorized("Could not reach server. Please check connection.");
     }
   };
 
