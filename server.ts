@@ -625,7 +625,7 @@ async function startServer() {
     // STRICT ISOLATION CHECK: Validate Share exists, belongs to chitti and tenant
     const share = shares.find(s => s.share_id === share_id && s.chitti_id === chitti_id && (!s.tenant_id || s.tenant_id.toLowerCase() === tenant_id.toLowerCase()));
     if (!share) {
-      return res.status(404).json({ error: "Share not found or composite chitti+tenant+formula isolation mismatch" });
+      return res.status(404).json({ error: "Share not found or composite chitti+tenant isolation mismatch" });
     }
     if (!share.tenant_id) {
       share.tenant_id = chitti.tenant_id;
