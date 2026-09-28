@@ -272,15 +272,12 @@ async function startServer() {
 
     try {
       const dbChittis = await getAllRecords("chittis");
-      if (dbChittis && dbChittis.length > 0) {
-        chittis.splice(0, chittis.length, ...dbChittis);
-      }
+      const filtered = (dbChittis || []).filter((c: any) => (c.tenant_id || "").trim().toLowerCase() === cleanReq);
+      return res.json(filtered);
     } catch (err) {
-      console.error("Failed to sync chittis from NocoDB on GET:", err);
+      console.error("Failed to fetch chittis live from NocoDB:", err);
+      return res.json([]);
     }
-
-    const filtered = chittis.filter(c => (c.tenant_id || "").trim().toLowerCase() === cleanReq);
-    res.json(filtered);
   });
 
   app.post("/api/chittis", async (req, res) => {
@@ -406,156 +403,164 @@ async function startServer() {
     res.json({ chitti_id, formula_id: formulaId, schedule });
   });
 
-  // Comprehensive Chitti computed details using pre-calculated schedule & monthly auto-update
-  app.get("/api/chittis/:chitti_id/details", (req, res) => {
+  // Comprehensive Chitti computed details fetched live from NocoDB on every request (Zero Server Cache)
+  app.get("/api/chittis/:chitti_id/details", async (req, res) => {
     const { chitti_id } = req.params;
     const tenant_id = req.query.tenant_id as string;
 
-    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id === tenant_id);
-    if (!chitti) {
-      return res.status(404).json({ error: "Chitti not found or tenant mismatch" });
-    }
+    try {
+      const dbChittis = await getAllRecords("chittis");
+      const dbShares = await getAllRecords("shares");
+      const dbTxs = await getAllRecords("transactions");
 
-    // Automatically check and update current_month once per calendar month in database/state
-    const now = new Date();
-    const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    
-    function getCurrentMonth(startDateStr: string, totalMonths: number): number {
-      const start = new Date(startDateStr);
-      const diffYears = now.getFullYear() - start.getFullYear();
-      const diffMonths = now.getMonth() - start.getMonth();
-      const elapsed = (diffYears * 12) + diffMonths + 1;
-      return Math.max(1, Math.min(elapsed, totalMonths));
-    }
+      const chitti = (dbChittis || []).find((c: any) => String(c.chitti_id) === String(chitti_id) && String(c.tenant_id || "").trim().toLowerCase() === String(tenant_id || "").trim().toLowerCase());
+      if (!chitti) {
+        return res.status(404).json({ error: "Chitti not found or tenant mismatch" });
+      }
 
-    const calculatedMonth = getCurrentMonth(chitti.start_date, chitti.total_months);
-    if (!chitti.current_month || chitti.last_checked_date !== currentYearMonth) {
-      chitti.current_month = calculatedMonth;
-      chitti.last_checked_date = currentYearMonth;
-    }
+      // Automatically check and update current_month once per calendar month
+      const now = new Date();
+      const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      function getCurrentMonth(startDateStr: string, totalMonths: number): number {
+        const start = new Date(startDateStr);
+        const diffYears = now.getFullYear() - start.getFullYear();
+        const diffMonths = now.getMonth() - start.getMonth();
+        const elapsed = (diffYears * 12) + diffMonths + 1;
+        return Math.max(1, Math.min(elapsed, totalMonths));
+      }
 
-    const t = chitti.current_month;
-    const N = chitti.total_members;
-    const U = chitti.u_due;
-    const D = chitti.d_due;
-    const F = chitti.commission;
-    const formulaId = chitti.formula_id || "standard_chit_v1";
+      const calculatedMonth = getCurrentMonth(chitti.start_date, chitti.total_months);
+      if (!chitti.current_month || chitti.last_checked_date !== currentYearMonth) {
+        chitti.current_month = calculatedMonth;
+        chitti.last_checked_date = currentYearMonth;
+        await updateRecord("chittis", { chitti_id: chitti.chitti_id, current_month: calculatedMonth, last_checked_date: currentYearMonth }).catch(() => {});
+      }
 
-    // O(1) Payout lookup from pre-calculated schedule array
-    let payout_t = 0;
-    if (chitti.payout_schedule) {
-      try {
-        const scheduleArr = JSON.parse(chitti.payout_schedule);
-        const item = scheduleArr.find((s: any) => s.month === t);
-        if (item) payout_t = item.payout;
-      } catch (e) {
+      const t = chitti.current_month || 1;
+      const N = Number(chitti.total_members) || 20;
+      const U = Number(chitti.u_due) || 5000;
+      const D = Number(chitti.d_due) || 6000;
+      const F = Number(chitti.commission) || 2000;
+      const formulaId = chitti.formula_id || "standard_chit_v1";
+
+      // O(1) Payout lookup from pre-calculated schedule array
+      let payout_t = 0;
+      if (chitti.payout_schedule) {
+        try {
+          const scheduleArr = JSON.parse(chitti.payout_schedule);
+          const item = scheduleArr.find((s: any) => s.month === t);
+          if (item) payout_t = item.payout;
+        } catch (e) {
+          payout_t = calculateFormulaPayout(t, N, U, D, F, formulaId);
+        }
+      } else {
         payout_t = calculateFormulaPayout(t, N, U, D, F, formulaId);
       }
-    } else {
-      payout_t = calculateFormulaPayout(t, N, U, D, F, formulaId);
-    }
 
-    const chittiShares = shares.filter(s => s.chitti_id === chitti_id && s.tenant_id === tenant_id);
-    const chittiTxs = transactions.filter(tx => tx.chitti_id === chitti_id && tx.tenant_id === tenant_id);
+      const chittiShares = (dbShares || []).filter((s: any) => String(s.chitti_id) === String(chitti_id));
+      const chittiTxs = (dbTxs || []).filter((tx: any) => String(tx.chitti_id) === String(chitti_id));
 
-    // Helper to compute and persistently store share-level ledger balances in DB
-    function updateShareLedger(share: any) {
-      let totalBilled = 0;
-      let monthlyDueNow = U;
+      function updateShareLedger(share: any) {
+        let totalBilled = 0;
+        let monthlyDueNow = U;
+
+        for (let m = 1; m <= t; m++) {
+          const dueForMonth = calculateFormulaDue(m, share.win_month, U, D, formulaId);
+          totalBilled += dueForMonth;
+          if (m === t) {
+            monthlyDueNow = dueForMonth;
+          }
+        }
+
+        const shareTxs = chittiTxs.filter((tx: any) => String(tx.share_id) === String(share.share_id) && !tx.is_void);
+        const totalPaid = shareTxs.reduce((sum: number, tx: any) => sum + (Number(tx.amount) || 0), 0);
+        const netBalance = totalPaid - totalBilled;
+
+        const pendingAmount = netBalance < 0 ? Math.abs(netBalance) : 0;
+        const advanceAmount = netBalance > 0 ? netBalance : 0;
+
+        share.total_billed = totalBilled;
+        share.total_paid = totalPaid;
+        share.net_balance = netBalance;
+        share.pending_amount = pendingAmount;
+        share.advance_amount = advanceAmount;
+        share.monthly_due_current = monthlyDueNow;
+
+        return { totalBilled, totalPaid, netBalance, pendingAmount, advanceAmount, monthlyDueNow, shareTxs };
+      }
+
+      let totalPendingMarket = 0;
+
+      const memberDetails = chittiShares.map((share: any) => {
+        const ledger = updateShareLedger(share);
+
+        if (ledger.pendingAmount > 0) {
+          totalPendingMarket += ledger.pendingAmount;
+        }
+
+        const status = share.win_month !== null && share.win_month <= t
+          ? `Drawn M${share.win_month}`
+          : "Undrawn";
+
+        return {
+          ...share,
+          status,
+          monthly_due_current: ledger.monthlyDueNow,
+          total_billed: ledger.totalBilled,
+          total_paid: ledger.totalPaid,
+          net_balance: ledger.netBalance,
+          pending_amount: ledger.pendingAmount,
+          advance_amount: ledger.advanceAmount,
+          transactions: ledger.shareTxs,
+        };
+      });
+
+      // Manager's Treasury Ledger
+      let cumulativeExpectedBilled = 0;
+      let cumulativeDisbursement = 0;
+      let winnersThisMonthCount = memberDetails.filter((s: any) => s.win_month === t).length;
+      let monthDisbursement = winnersThisMonthCount * payout_t;
 
       for (let m = 1; m <= t; m++) {
-        const dueForMonth = calculateFormulaDue(m, share.win_month, U, D, formulaId);
-        totalBilled += dueForMonth;
-        if (m === t) {
-          monthlyDueNow = dueForMonth;
-        }
+        const uCountM = memberDetails.filter((s: any) => s.win_month === null || s.win_month > m).length;
+        const dCountM = N - uCountM;
+        cumulativeExpectedBilled += (uCountM * U) + (dCountM * D);
+
+        const p_m = calculateFormulaPayout(m, N, U, D, F, formulaId);
+        const winCountM = memberDetails.filter((s: any) => s.win_month === m).length;
+        cumulativeDisbursement += (winCountM * p_m);
       }
 
-      const shareTxs = chittiTxs.filter(tx => tx.share_id === share.share_id && !tx.is_void);
-      const totalPaid = shareTxs.reduce((sum, tx) => sum + tx.amount, 0);
-      const netBalance = totalPaid - totalBilled;
+      const totalActualCashCollected = memberDetails.reduce((sum: number, s: any) => sum + s.total_paid, 0);
+      const cumulativeCommission = t * F;
+      const netCashflowUptodate = totalActualCashCollected - cumulativeDisbursement - cumulativeCommission;
+      const closingBalance = netCashflowUptodate;
 
-      const pendingAmount = netBalance < 0 ? Math.abs(netBalance) : 0;
-      const advanceAmount = netBalance > 0 ? netBalance : 0;
-
-      // Store directly in database entity object
-      share.total_billed = totalBilled;
-      share.total_paid = totalPaid;
-      share.net_balance = netBalance;
-      share.pending_amount = pendingAmount;
-      share.advance_amount = advanceAmount;
-      share.monthly_due_current = monthlyDueNow;
-
-      return { totalBilled, totalPaid, netBalance, pendingAmount, advanceAmount, monthlyDueNow, shareTxs };
+      return res.json({
+        chitti,
+        active_month: t,
+        payout_t,
+        total_pending_market: totalPendingMarket,
+        treasury: {
+          gross_collection: cumulativeExpectedBilled,
+          actual_cash_collected: totalActualCashCollected,
+          undrawn_count: memberDetails.filter((s: any) => s.win_month === null || s.win_month > t).length,
+          drawn_count: N - memberDetails.filter((s: any) => s.win_month === null || s.win_month > t).length,
+          winners_this_month: winnersThisMonthCount,
+          total_disbursement: monthDisbursement,
+          cumulative_disbursement: cumulativeDisbursement,
+          flat_commission: F,
+          cumulative_commission: cumulativeCommission,
+          net_cashflow: netCashflowUptodate,
+          closing_ledger_balance: closingBalance,
+        },
+        members: memberDetails,
+      });
+    } catch (err) {
+      console.error("Error fetching live chitti details from NocoDB:", err);
+      return res.status(500).json({ error: "Failed to fetch live chitti details from database" });
     }
-
-    let totalPendingMarket = 0;
-
-    const memberDetails = chittiShares.map(share => {
-      const ledger = updateShareLedger(share);
-
-      if (ledger.pendingAmount > 0) {
-        totalPendingMarket += ledger.pendingAmount;
-      }
-
-      const status = share.win_month !== null && share.win_month <= t
-        ? `Drawn M${share.win_month}`
-        : "Undrawn";
-
-      return {
-        ...share,
-        status,
-        monthly_due_current: ledger.monthlyDueNow,
-        total_billed: ledger.totalBilled,
-        total_paid: ledger.totalPaid,
-        net_balance: ledger.netBalance,
-        pending_amount: ledger.pendingAmount,
-        advance_amount: ledger.advanceAmount,
-        transactions: ledger.shareTxs,
-      };
-    });
-
-    // 2. Manager's Treasury Ledger (Up-to-date cumulative using formula)
-    let cumulativeExpectedBilled = 0;
-    let cumulativeDisbursement = 0;
-    let winnersThisMonthCount = memberDetails.filter(s => s.win_month === t).length;
-    let monthDisbursement = winnersThisMonthCount * payout_t;
-
-    for (let m = 1; m <= t; m++) {
-      const uCountM = memberDetails.filter(s => s.win_month === null || s.win_month > m).length;
-      const dCountM = N - uCountM;
-      cumulativeExpectedBilled += (uCountM * U) + (dCountM * D);
-
-      const p_m = calculateFormulaPayout(m, N, U, D, F, formulaId);
-      const winCountM = memberDetails.filter(s => s.win_month === m).length;
-      cumulativeDisbursement += (winCountM * p_m);
-    }
-
-    const totalActualCashCollected = memberDetails.reduce((sum, s) => sum + s.total_paid, 0);
-    const cumulativeCommission = t * F;
-    const netCashflowUptodate = totalActualCashCollected - cumulativeDisbursement - cumulativeCommission;
-    const closingBalance = netCashflowUptodate;
-
-    res.json({
-      chitti,
-      active_month: t,
-      payout_t,
-      total_pending_market: totalPendingMarket,
-      treasury: {
-        gross_collection: cumulativeExpectedBilled,
-        actual_cash_collected: totalActualCashCollected,
-        undrawn_count: memberDetails.filter(s => s.win_month === null || s.win_month > t).length,
-        drawn_count: N - memberDetails.filter(s => s.win_month === null || s.win_month > t).length,
-        winners_this_month: winnersThisMonthCount,
-        total_disbursement: monthDisbursement,
-        cumulative_disbursement: cumulativeDisbursement,
-        flat_commission: F,
-        cumulative_commission: cumulativeCommission,
-        net_cashflow: netCashflowUptodate,
-        closing_ledger_balance: closingBalance,
-      },
-      members: memberDetails,
-    });
   });
 
   // Idempotency cache store (24-hour TTL in-memory simulation)
