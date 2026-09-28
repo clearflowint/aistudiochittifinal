@@ -30,7 +30,6 @@ export const StandardChitFormula: ChitFormulaEngine = {
   },
 
   calculateTotalBilled: (activeMonth: number, winMonth: number | null, U: number, D: number): number => {
-    if (activeMonth <= 0) return 0;
     let total = 0;
     for (let m = 1; m <= activeMonth; m++) {
       total += StandardChitFormula.calculateMemberDueForMonth(m, winMonth, U, D);

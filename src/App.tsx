@@ -164,7 +164,7 @@ export default function App() {
       const diffYears = now.getFullYear() - start.getFullYear();
       const diffMonths = now.getMonth() - start.getMonth();
       const elapsed = diffYears * 12 + diffMonths + 1;
-      const calMonth = Math.max(0, Math.min(elapsed, chitti.total_months));
+      const calMonth = Math.max(1, Math.min(elapsed, chitti.total_months));
       setActiveMonth(calMonth);
     }
   }, [currentChittiId, chittis]);
