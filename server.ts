@@ -317,7 +317,7 @@ async function startServer() {
     const diffYears = now.getFullYear() - start.getFullYear();
     const diffMonths = now.getMonth() - start.getMonth();
     const elapsed = (diffYears * 12) + diffMonths + 1;
-    const initialCurrentMonth = Math.max(0, Math.min(elapsed, tMonths));
+    const initialCurrentMonth = Math.max(1, Math.min(elapsed, tMonths));
     const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     const newChitti: ChittiMaster = {
@@ -443,17 +443,17 @@ async function startServer() {
         const diffYears = now.getFullYear() - start.getFullYear();
         const diffMonths = now.getMonth() - start.getMonth();
         const elapsed = (diffYears * 12) + diffMonths + 1;
-        return Math.max(0, Math.min(elapsed, totalMonths));
+        return Math.max(1, Math.min(elapsed, totalMonths));
       }
 
       const calculatedMonth = getCurrentMonth(chitti.start_date, chitti.total_months);
-      if (chitti.current_month === undefined || chitti.current_month === null || chitti.current_month !== calculatedMonth || chitti.last_checked_date !== currentYearMonth) {
+      if (!chitti.current_month || chitti.last_checked_date !== currentYearMonth) {
         chitti.current_month = calculatedMonth;
         chitti.last_checked_date = currentYearMonth;
         await updateRecord("chittis", { chitti_id: chitti.chitti_id, current_month: calculatedMonth, last_checked_date: currentYearMonth }).catch(() => {});
       }
 
-      const t = (chitti.current_month !== undefined && chitti.current_month !== null) ? Number(chitti.current_month) : 1;
+      const t = chitti.current_month || 1;
       const N = Number(chitti.total_members) || 20;
       const U = Number(chitti.u_due) || 5000;
       const D = Number(chitti.d_due) || 6000;
@@ -588,7 +588,7 @@ async function startServer() {
     const chitti = chittis.find(c => c.chitti_id === chitti_id);
     if (!share || !chitti) return;
 
-    const t = (chitti.current_month !== undefined && chitti.current_month !== null) ? Number(chitti.current_month) : 1;
+    const t = chitti.current_month || 1;
     const U = chitti.u_due;
     const D = chitti.d_due;
     const formulaId = chitti.formula_id || "standard_chit_v1";
@@ -617,15 +617,18 @@ async function startServer() {
     }
 
     // STRICT ISOLATION CHECK: Validate Chitti exists and belongs to tenant
-    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id === tenant_id);
+    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id?.toLowerCase() === tenant_id?.toLowerCase());
     if (!chitti) {
       return res.status(404).json({ error: "Chitti not found or tenant isolation mismatch" });
     }
 
     // STRICT ISOLATION CHECK: Validate Share exists, belongs to chitti and tenant
-    const share = shares.find(s => s.share_id === share_id && s.chitti_id === chitti_id && s.tenant_id === tenant_id);
+    const share = shares.find(s => s.share_id === share_id && s.chitti_id === chitti_id && (!s.tenant_id || s.tenant_id.toLowerCase() === tenant_id.toLowerCase()));
     if (!share) {
       return res.status(404).json({ error: "Share not found or composite chitti+tenant+formula isolation mismatch" });
+    }
+    if (!share.tenant_id) {
+      share.tenant_id = chitti.tenant_id;
     }
 
     if (idempotencyKey) {
@@ -699,16 +702,19 @@ async function startServer() {
     }
 
     // STRICT ISOLATION CHECK: Validate Chitti exists and belongs to tenant
-    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id === tenant_id);
+    const chitti = chittis.find(c => c.chitti_id === chitti_id && c.tenant_id?.toLowerCase() === tenant_id?.toLowerCase());
     if (!chitti) {
       return res.status(404).json({ error: "Chitti not found or tenant isolation mismatch" });
     }
 
     // STRICT ISOLATION CHECK: Validate Share exists, belongs to chitti and tenant
-    const share = shares.find(s => s.share_id === share_id && s.chitti_id === chitti_id && s.tenant_id === tenant_id);
+    const share = shares.find(s => s.share_id === share_id && s.chitti_id === chitti_id && (!s.tenant_id || s.tenant_id.toLowerCase() === tenant_id.toLowerCase()));
     if (!share) {
       console.error("Share not found for update:", { share_id, chitti_id, tenant_id });
       return res.status(404).json({ error: "Share not found or composite chitti+tenant isolation mismatch" });
+    }
+    if (!share.tenant_id) {
+      share.tenant_id = chitti.tenant_id;
     }
 
     if (win_month !== undefined) {
