@@ -41,6 +41,18 @@ export async function checkNocoDBConnection(): Promise<boolean> {
   }
 }
 
+// Verified NocoDB Table IDs with environment variable overrides
+export const DEFAULT_TABLE_IDS: Record<string, string> = {
+  chittis: process.env.NOCODB_TABLE_CHITTIS || "mtmdpck1f4w2adx",
+  shares: process.env.NOCODB_TABLE_SHARES || "m46pk64wr8nzeyg",
+  transactions: process.env.NOCODB_TABLE_TRANSACTIONS || "m8hhgaoq4esfbkr",
+  chittiExpenses: process.env.NOCODB_TABLE_EXPENSES || "m6qj4g8mwrpsls9",
+  tenants: process.env.NOCODB_TABLE_TENANTS || "m4ctl4al3q2pbm2",
+  mathTemplates: process.env.NOCODB_TABLE_TEMPLATES || "mm17ll57nphw70c",
+};
+
+const tableIdCache = new Map<string, string>(Object.entries(DEFAULT_TABLE_IDS));
+
 export async function getNocoDBTables() {
   try {
     const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, { headers });
@@ -63,8 +75,6 @@ export async function getNocoDBTables() {
   }
 }
 
-const tableIdCache = new Map<string, string>();
-
 async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -78,15 +88,18 @@ async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000
   }
 }
 
-export async function getTableId(tableName: string): Promise<string | null> {
+export async function getTableId(tableName: string): Promise<string> {
   if (tableIdCache.has(tableName)) {
     return tableIdCache.get(tableName)!;
+  }
+  if (DEFAULT_TABLE_IDS[tableName]) {
+    return DEFAULT_TABLE_IDS[tableName];
   }
   await getNocoDBTables();
   if (tableIdCache.has(tableName)) {
     return tableIdCache.get(tableName)!;
   }
-  return tableName; // Fallback
+  return DEFAULT_TABLE_IDS[tableName] || tableName;
 }
 
 function normalizeRecord(tableName: string, r: any) {
@@ -159,14 +172,17 @@ export async function getAllRecords(tableName: string) {
   try {
     const tableId = await getTableId(tableName);
     const target = tableId || tableName;
-    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?limit=1000`, { headers });
+    const url = `${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?limit=1000`;
+    console.log(`[NocoDB FETCH] GET ${url}`);
+    const res = await fetchWithTimeout(url, { headers });
     if (!res.ok) {
       const errText = await res.text();
-      console.error(`NocoDB ${tableName} fetch failed (${res.status}):`, errText);
+      console.error(`NocoDB ${tableName} fetch failed (${res.status}) [url: ${url}]:`, errText);
       return [];
     }
     const data = await res.json() as any;
     const list = data.list || [];
+    console.log(`[NocoDB FETCH SUCCESS] ${tableName}: retrieved ${list.length} records`);
     return list.map((r: any) => normalizeRecord(tableName, r));
   } catch (err) {
     console.error(`Error fetching records from ${tableName}:`, err);

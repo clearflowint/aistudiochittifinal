@@ -272,7 +272,16 @@ async function startServer() {
 
     try {
       const dbChittis = await getAllRecords("chittis");
-      const filtered = (dbChittis || []).filter((c: any) => (c.tenant_id || "").trim().toLowerCase() === cleanReq);
+      console.log(`[API /api/chittis] Tenant request: "${cleanReq}", Total chittis in DB: ${(dbChittis || []).length}`);
+      const filtered = (dbChittis || []).filter((c: any) => {
+        const cTenant = String(c.tenant_id || c.tenantId || c.email || "").trim().toLowerCase();
+        const match = cTenant === cleanReq;
+        if (!match && c.tenant_id) {
+          console.log(`[Tenant Mismatch] Chitti ${c.chitti_id} has tenant "${c.tenant_id}" vs requested "${cleanReq}"`);
+        }
+        return match;
+      });
+      console.log(`[API /api/chittis] Matched chittis for "${cleanReq}": ${filtered.length}`);
       return res.json(filtered);
     } catch (err) {
       console.error("Failed to fetch chittis live from NocoDB:", err);
@@ -331,11 +340,15 @@ async function startServer() {
     try {
       const resRaw: any = await insertRecord("chittis", newChitti);
       console.log(`NocoDB chitti insert result for ${newChitti.chitti_id}:`, resRaw);
+      if (!resRaw || resRaw.error) {
+        return res.status(500).json({ success: false, error: "NocoDB database rejected chitti insertion", details: resRaw });
+      }
       if (resRaw && (resRaw.Id || resRaw.id)) {
         (newChitti as any).Id = resRaw.Id || resRaw.id;
       }
     } catch (err) {
       console.error("NocoDB chitti sync error:", err);
+      return res.status(500).json({ success: false, error: "Database network error during chitti creation", details: String(err) });
     }
 
     const newSharesList: any[] = [];
@@ -353,19 +366,22 @@ async function startServer() {
         pending_amount: 0,
         advance_amount: 0,
       };
-      shares.push(newShare);
       newSharesList.push(newShare);
     }
 
-    // Fast single bulk insert for all shares instead of 20 sequential calls
+    // Fast single bulk insert for all shares with strict DB error handling
     try {
-      await insertBulkRecords("shares", newSharesList);
+      const bulkRes: any = await insertBulkRecords("shares", newSharesList);
+      if (bulkRes && bulkRes.error) {
+        return res.status(500).json({ success: false, error: "NocoDB database rejected bulk shares insertion", details: bulkRes });
+      }
       console.log(`Successfully bulk-inserted ${newSharesList.length} shares into NocoDB for ${newChitti.chitti_id}`);
     } catch (err) {
       console.error("NocoDB bulk shares sync error:", err);
+      return res.status(500).json({ success: false, error: "Database network error during shares creation", details: String(err) });
     }
 
-    res.json(newChitti);
+    res.json({ success: true, chitti: newChitti, verified: true });
   });
 
   // Full month-by-month schedule & payout array endpoint
@@ -636,13 +652,14 @@ async function startServer() {
 
     try {
       console.log(`[DB AWAIT] Inserting transaction ${newTx.tx_id} into NocoDB...`, new Date().toISOString());
-      const syncRes = await insertRecord("transactions", newTx);
+      const syncRes: any = await insertRecord("transactions", newTx);
       console.log(`[DB CONFIRMED] NocoDB responded for transaction ${newTx.tx_id}:`, syncRes, new Date().toISOString());
-      if (!syncRes || (syncRes as any).error) {
-        console.error("NocoDB transaction sync returned error:", syncRes);
+      if (!syncRes || syncRes.error) {
+        return res.status(500).json({ success: false, error: "NocoDB database rejected transaction write", details: syncRes });
       }
     } catch (err) {
       console.error("NocoDB transaction sync exception:", err);
+      return res.status(500).json({ success: false, error: "Database network error during transaction insert", details: String(err) });
     }
 
     if (idempotencyKey) {
@@ -784,10 +801,17 @@ async function startServer() {
       amount: Number(amount),
       date: new Date().toISOString().split("T")[0],
     };
-    chittiExpenses.push(newExp);
-    await insertRecord("chittiExpenses", newExp).catch(err => console.error("NocoDB chittiExpense sync error:", err));
-    console.log("Expense successfully added:", newExp);
-    res.json(newExp);
+    try {
+      const syncRes: any = await insertRecord("chittiExpenses", newExp);
+      if (!syncRes || syncRes.error) {
+        return res.status(500).json({ success: false, error: "NocoDB database rejected expense write", details: syncRes });
+      }
+    } catch (err) {
+      console.error("NocoDB chittiExpense sync error:", err);
+      return res.status(500).json({ success: false, error: "Database network error during expense insert", details: String(err) });
+    }
+    console.log("Expense successfully added and verified in NocoDB:", newExp);
+    res.json({ success: true, expense: newExp, verified: true });
   });
 
   app.delete("/api/chittis/expenses/:expense_id", async (req, res) => {
