@@ -220,14 +220,17 @@ export default function App() {
 
   // Handlers for mutations
   const handleRecordPayment = async (shareId: string, amount: number, paymentMode: string) => {
+    const shareChittiId = currentChittiId || details?.chitti?.chitti_id || "";
+    const shareTenantId = currentTenantId || details?.chitti?.tenant_id || "";
+
     try {
       const res = await fetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           share_id: shareId,
-          chitti_id: currentChittiId,
-          tenant_id: currentTenantId,
+          chitti_id: shareChittiId,
+          tenant_id: shareTenantId,
           amount,
           payment_mode: paymentMode,
         }),
@@ -248,8 +251,8 @@ export default function App() {
 
   const handleAssignWinner = async (shareId: string, winMonth: number | null) => {
     if (!assignWinnerShare) return;
-    const shareTenantId = assignWinnerShare.tenant_id;
-    const shareChittiId = assignWinnerShare.chitti_id;
+    const shareTenantId = assignWinnerShare.tenant_id || currentTenantId || details?.chitti?.tenant_id || "";
+    const shareChittiId = assignWinnerShare.chitti_id || currentChittiId || details?.chitti?.chitti_id || "";
 
     try {
       const res = await fetch(`/api/shares/${shareId}`, {
@@ -279,8 +282,8 @@ export default function App() {
 
   const handleEditMember = async (shareId: string, memberName: string, phone: string) => {
     if (!editMemberShare) return;
-    const shareTenantId = editMemberShare.tenant_id;
-    const shareChittiId = editMemberShare.chitti_id;
+    const shareTenantId = editMemberShare.tenant_id || currentTenantId || details?.chitti?.tenant_id || "";
+    const shareChittiId = editMemberShare.chitti_id || currentChittiId || details?.chitti?.chitti_id || "";
 
     // Optimistic UI card-level update for instant reflection without full reload
     if (details) {
@@ -305,7 +308,8 @@ export default function App() {
         }),
       });
       if (!res.ok) {
-        showToast("Failed to update member info on server.", "error");
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Failed to update member info on server.", "error");
         fetchDetails(); // Re-fetch on failure
       } else {
         showToast("Member details updated successfully!");
