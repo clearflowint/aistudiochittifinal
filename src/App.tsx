@@ -130,8 +130,16 @@ export default function App() {
         setChittis(list);
         setChittisLoading(false);
         if (list.length > 0) {
-          setCurrentChittiId(list[0].chitti_id);
-          setCurrentFormulaId(list[0].formula_id || "standard_chit_v1");
+          const exists = list.some((c) => c.chitti_id === currentChittiId);
+          if (!exists) {
+            setCurrentChittiId(list[0].chitti_id);
+            setCurrentFormulaId(list[0].formula_id || "standard_chit_v1");
+          } else {
+            const activeChitti = list.find((c) => c.chitti_id === currentChittiId);
+            if (activeChitti && activeChitti.formula_id) {
+              setCurrentFormulaId(activeChitti.formula_id);
+            }
+          }
         } else {
           setCurrentChittiId("");
           setDetails(null);

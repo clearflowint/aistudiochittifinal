@@ -1,6 +1,6 @@
 const NOCODB_URL = process.env.NOCODB_URL || "https://nocodbclearflow.duckdns.org";
 const NOCODB_TOKEN = process.env.NOCODB_TOKEN || "nc_pat_UNZlmQBfV7PlVv3aNm75bo1gW67aVvd2lC6Xv1VR";
-const BASE_ID = process.env.NOCODB_BASE_ID || "p4277q2gv93p704";
+const BASE_ID = process.env.NOCODB_BASE_ID || "71164a52-14f4-4eae-b1b0-2dff495e3e09";
 
 const headers = {
   "xc-token": NOCODB_TOKEN,
@@ -10,8 +10,8 @@ const headers = {
 const tableColumnsMap: Record<string, string[]> = {
   tenants: ["tenant_id", "name", "status", "Id", "id"],
   mathTemplates: ["formula_id", "name", "description", "Id", "id"],
-  chittis: ["chitti_id", "tenant_id", "formula_id", "name", "start_date", "total_members", "total_months", "u_due", "d_due", "commission", "current_month", "last_checked_date", "payout_schedule", "Id", "id"],
-  shares: ["share_id", "chitti_id", "tenant_id", "member_name", "phone", "win_month", "total_paid", "total_billed", "net_balance", "pending_amount", "advance_amount", "Id", "id"],
+  chittis: ["chitti_id", "tenant_id", "formula_id", "name", "start_date", "total_members", "total_months", "u_due", "d_due", "commission", "current_month", "last_checked_date", "payout_schedule", "total_arrears", "cumulative_commission", "total_disbursed", "total_cash_collected", "net_balance", "Id", "id"],
+  shares: ["share_id", "chitti_id", "tenant_id", "member_name", "phone", "win_month", "total_paid", "total_billed", "net_balance", "pending_amount", "advance_amount", "monthly_due_current", "Id", "id"],
   transactions: ["tx_id", "share_id", "chitti_id", "tenant_id", "amount", "date_paid", "payment_mode", "is_void", "Id", "id"],
   chittiExpenses: ["expense_id", "chitti_id", "tenant_id", "title", "type", "amount", "date", "Id", "id"]
 };
@@ -473,7 +473,12 @@ export async function initializeNocoDBTables() {
     { column_name: "commission", uidt: "Number" },
     { column_name: "current_month", uidt: "Number" },
     { column_name: "last_checked_date", uidt: "SingleLineText" },
-    { column_name: "payout_schedule", uidt: "LongText" }
+    { column_name: "payout_schedule", uidt: "LongText" },
+    { column_name: "total_arrears", uidt: "Number" },
+    { column_name: "cumulative_commission", uidt: "Number" },
+    { column_name: "total_disbursed", uidt: "Number" },
+    { column_name: "total_cash_collected", uidt: "Number" },
+    { column_name: "net_balance", uidt: "Number" }
   ]);
 
   await ensureTableExists("shares", [

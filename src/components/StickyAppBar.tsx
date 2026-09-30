@@ -87,7 +87,7 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="space-y-2">
           {/* Tier 2: Math Formula Template Filter */}
           <div className="flex items-center gap-1.5 bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700">
             <FunctionSquare className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -105,27 +105,42 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
             </select>
           </div>
 
-          {/* Tier 3: Filtered Chitti Group / Scheme Level */}
-          <div className="flex items-center gap-1.5 bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700">
-            <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span className="text-[10px] text-slate-400 font-medium shrink-0">Chitti Group:</span>
-            <select
-              value={currentChittiId}
-              onChange={(e) => onSelectChitti(e.target.value)}
-              className="bg-transparent text-white font-medium focus:outline-none cursor-pointer w-full truncate"
-            >
+          {/* Tier 3: Filtered Chitti Group / Scheme Level - Tab Selection */}
+          <div className="flex flex-col gap-1.5 bg-slate-800/90 px-3 py-2 rounded-lg border border-slate-700">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                <Layers className="w-3.5 h-3.5 text-emerald-400" /> Chitti Schemes (Click to switch):
+              </span>
+              <span className="text-[10px] text-sky-400 font-mono">
+                {uniqueFilteredChittis.length} Active
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-thin">
               {uniqueFilteredChittis.length > 0 ? (
-                uniqueFilteredChittis.map((c, idx) => (
-                  <option key={`${c.chitti_id}-${idx}`} value={c.chitti_id} className="bg-slate-800 text-white">
-                    {c.name} ({c.chitti_id})
-                  </option>
-                ))
+                uniqueFilteredChittis.map((c, idx) => {
+                  const isSelected = c.chitti_id === currentChittiId;
+                  return (
+                    <button
+                      key={`${c.chitti_id}-${idx}`}
+                      onClick={() => onSelectChitti(c.chitti_id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shadow-sm ${
+                        isSelected
+                          ? "bg-sky-600 text-white border border-sky-400 ring-2 ring-sky-500/20"
+                          : "bg-slate-900 text-slate-300 hover:bg-slate-700 border border-slate-700"
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${isSelected ? "bg-emerald-300 animate-pulse" : "bg-slate-500"}`}></span>
+                      {c.name}
+                      <span className={`text-[10px] font-mono ${isSelected ? "text-sky-200" : "text-slate-400"}`}>({c.chitti_id})</span>
+                    </button>
+                  );
+                })
               ) : (
-                <option value="" disabled className="bg-slate-800 text-slate-400">
-                  No chittis for this engine
-                </option>
+                <div className="text-slate-400 text-xs py-1 italic">
+                  No chittis available for this math engine template. Click "+ New Chitti" above.
+                </div>
               )}
-            </select>
+            </div>
           </div>
         </div>
       </div>

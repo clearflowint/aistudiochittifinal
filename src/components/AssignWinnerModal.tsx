@@ -18,15 +18,28 @@ export const AssignWinnerModal: React.FC<AssignWinnerModalProps> = ({
   onSubmit,
 }) => {
   const [winMonth, setWinMonth] = useState<string>(share.win_month ? share.win_month.toString() : "");
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     const val = winMonth === "" ? null : Number(winMonth);
-    onSubmit(share.share_id, val);
+    try {
+      await onSubmit(share.share_id, val);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleRevoke = () => {
-    onSubmit(share.share_id, null);
+  const handleRevoke = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onSubmit(share.share_id, null);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Only allow selecting months from 1 up to activeMonth (prevent future/unspawnned months)
@@ -99,9 +112,10 @@ export const AssignWinnerModal: React.FC<AssignWinnerModalProps> = ({
             </button>
             <button
               type="submit"
-              className="flex-1 bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold py-2.5 rounded-xl text-xs transition shadow-sm"
+              disabled={isSubmitting}
+              className="flex-1 bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold py-2.5 rounded-xl text-xs transition shadow-sm disabled:opacity-50"
             >
-              Save Winner
+              {isSubmitting ? "Saving..." : "Save Winner"}
             </button>
           </div>
         </form>
