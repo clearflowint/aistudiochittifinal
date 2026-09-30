@@ -344,37 +344,67 @@ export async function updateRecord(tableName: string, record: any) {
 }
 
 export async function deleteRecordsByChittiId(chittiId: string) {
-  const tablesToCheck = ["chittis", "shares", "transactions", "chittiExpenses"];
+  const tablesToCheck = ["transactions", "chittiExpenses", "shares", "chittis"];
   for (const tableName of tablesToCheck) {
     try {
       const records = await getAllRecords(tableName);
       const matching = records.filter((rec: any) => String(rec.chitti_id) === String(chittiId));
+      if (matching.length === 0) continue;
+
+      const tableId = await getTableId(tableName);
+      const target = tableId || tableName;
+
+      const idsToDelete: any[] = [];
       for (const rec of matching) {
-        const recordId = rec.Id || rec.id || rec.ID || rec.row_id || Object.keys(rec).find(k => k.toLowerCase() === 'id' && rec[k] !== undefined ? rec[k] : null);
-        const resolvedId = recordId !== undefined && recordId !== null && typeof recordId !== 'function' ? (rec[recordId] !== undefined ? rec[recordId] : recordId) : (rec.Id || rec.id);
+        const rowId = rec.Id || rec.id || rec.ID || rec.row_id;
+        if (rowId !== undefined && rowId !== null) {
+          idsToDelete.push(rowId);
+        }
+      }
 
-        if (resolvedId) {
-          const tableId = await getTableId(tableName);
-          const target = tableId || tableName;
-
-          // Strategy 1: DELETE with JSON body
-          try {
-            await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
+      if (idsToDelete.length > 0) {
+        // Attempt NocoDB bulk delete first
+        let bulkSuccess = false;
+        try {
+          const bulkPayload = idsToDelete.map((id) => ({ Id: id, id }));
+          const bulkRes = await fetchWithTimeout(
+            `${NOCODB_URL}/api/v1/db/data/bulk/v1/${BASE_ID}/${target}`,
+            {
               method: "DELETE",
               headers,
-              body: JSON.stringify({ Id: resolvedId, id: resolvedId }),
-            });
-          } catch (e) {}
+              body: JSON.stringify(bulkPayload),
+            },
+            10000
+          );
+          if (bulkRes.ok) {
+            console.log(`[NocoDB Bulk DELETE] Removed ${idsToDelete.length} records from ${tableName} for chitti ${chittiId}`);
+            bulkSuccess = true;
+          }
+        } catch (e) {
+          console.warn(`Bulk delete failed for ${tableName}, falling back to parallel individual deletes:`, e);
+        }
 
-          // Strategy 2: DELETE with path parameter
-          try {
-            await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${resolvedId}`, {
-              method: "DELETE",
-              headers,
-            });
-          } catch (e) {}
-
-          console.log(`NocoDB DELETE executed for ${tableName} chitti_id=${chittiId} record Id=${resolvedId}`);
+        // Parallel fallback using Promise.all
+        if (!bulkSuccess) {
+          await Promise.all(
+            idsToDelete.map(async (rowId) => {
+              try {
+                await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}/${rowId}`, {
+                  method: "DELETE",
+                  headers,
+                });
+              } catch (e) {
+                try {
+                  await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}`, {
+                    method: "DELETE",
+                    headers,
+                    body: JSON.stringify({ Id: rowId, id: rowId }),
+                  });
+                } catch (err2) {}
+              }
+            })
+          );
+          console.log(`[NocoDB Parallel DELETE] Removed ${idsToDelete.length} records from ${tableName} for chitti ${chittiId}`);
         }
       }
     } catch (err) {

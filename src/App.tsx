@@ -7,7 +7,7 @@ import { RecordPaymentModal } from "./components/RecordPaymentModal";
 import { AssignWinnerModal } from "./components/AssignWinnerModal";
 import { EditMemberModal } from "./components/EditMemberModal";
 import { CreateChittiModal } from "./components/CreateChittiModal";
-import { Search, RefreshCw, MessageSquare } from "lucide-react";
+import { Search, RefreshCw, MessageSquare, Loader2, Sparkles, AlertCircle, CheckCircle2 } from "lucide-react";
 import { LandingPage } from "./components/LandingPage";
 import { ManagerDashboard } from "./components/ManagerDashboard";
 import { GuestPortal } from "./components/GuestPortal";
@@ -36,6 +36,12 @@ export default function App() {
   const [currentChittiId, setCurrentChittiId] = useState<string>(() => {
     return localStorage.getItem("clearflow_chitti_id") || "";
   });
+
+  // Explicit operation delay & processing states
+  const [isRecordingPayment, setIsRecordingPayment] = useState<boolean>(false);
+  const [isCreatingChitti, setIsCreatingChitti] = useState<boolean>(false);
+  const [isUpdatingWinner, setIsUpdatingWinner] = useState<boolean>(false);
+  const [isDeletingChitti, setIsDeletingChitti] = useState<boolean>(false);
 
   // Persist session state in localStorage so reloads and PWA shortcuts retain the exact workspace view & tenant
   useEffect(() => {
@@ -178,15 +184,15 @@ export default function App() {
   }, [currentChittiId, chittis]);
 
   // Load chitti details with strict fingerprinting guard to prevent race conditions / cache contamination
-  const fetchDetails = (silent = false) => {
-    if (!currentChittiId || !currentTenantId) return;
+  const fetchDetails = (silent = false): Promise<void> => {
+    if (!currentChittiId || !currentTenantId) return Promise.resolve();
     const fingerprint = `${currentTenantId}:${currentChittiId}:${activeMonth}`;
     fetchFingerprintRef.current = fingerprint;
 
     if (!silent) setLoading(true);
     else setIsRefreshing(true);
 
-    fetch(`/api/chittis/${currentChittiId}/details?tenant_id=${currentTenantId}&month=${activeMonth}`)
+    return fetch(`/api/chittis/${currentChittiId}/details?tenant_id=${currentTenantId}&month=${activeMonth}`)
       .then((res) => res.json())
       .then((data) => {
         // Only update state if fingerprint matches current selection (discards stale responses)
@@ -226,11 +232,12 @@ export default function App() {
     fetchDetails();
   }, [currentChittiId, currentTenantId, activeMonth]);
 
-  // Handlers for mutations
+  // Handlers for mutations with round processing indicator states
   const handleRecordPayment = async (shareId: string, amount: number, paymentMode: string) => {
     const shareChittiId = currentChittiId || details?.chitti?.chitti_id || "";
     const shareTenantId = currentTenantId || details?.chitti?.tenant_id || "";
 
+    setIsRecordingPayment(true);
     try {
       const res = await fetch("/api/transactions", {
         method: "POST",
@@ -246,7 +253,7 @@ export default function App() {
       if (res.ok) {
         setRecordPaymentShare(null);
         showToast(`Successfully recorded payment of ₹${Math.abs(amount).toLocaleString()}! Ledger updated.`);
-        fetchDetails(true); // Silent refresh to update card area instantly without full loader
+        await fetchDetails(true); // Silent refresh to update card area instantly
       } else {
         const errData = await res.json().catch(() => ({}));
         showToast(errData.error || "Failed to record payment on server.", "error");
@@ -254,6 +261,8 @@ export default function App() {
     } catch (err) {
       console.error("Error recording payment:", err);
       showToast("Network error: Unable to record payment.", "error");
+    } finally {
+      setIsRecordingPayment(false);
     }
   };
 
@@ -262,6 +271,7 @@ export default function App() {
     const shareTenantId = assignWinnerShare.tenant_id || currentTenantId || details?.chitti?.tenant_id || "";
     const shareChittiId = assignWinnerShare.chitti_id || currentChittiId || details?.chitti?.chitti_id || "";
 
+    setIsUpdatingWinner(true);
     try {
       const res = await fetch(`/api/shares/${shareId}`, {
         method: "PATCH",
@@ -275,16 +285,18 @@ export default function App() {
       if (res.ok) {
         setAssignWinnerShare(null);
         showToast(winMonth !== null ? `Assigned winner for Month ${winMonth} successfully!` : `Cleared winner assignment successfully!`);
-        fetchDetails(true); // Silent refresh
+        await fetchDetails(true); // Silent refresh
       } else {
         const errData = await res.json().catch(() => ({}));
         showToast(errData.error || "Failed to update winner assignment.", "error");
-        fetchDetails(true);
+        await fetchDetails(true);
       }
     } catch (err) {
       console.error("Error assigning winner:", err);
       showToast("Network error: Unable to update winner.", "error");
-      fetchDetails(true);
+      await fetchDetails(true);
+    } finally {
+      setIsUpdatingWinner(false);
     }
   };
 
@@ -318,15 +330,15 @@ export default function App() {
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         showToast(errData.error || "Failed to update member info on server.", "error");
-        fetchDetails(); // Re-fetch on failure
+        await fetchDetails();
       } else {
         showToast("Member details updated successfully!");
-        fetchDetails(); // Refresh details to guarantee DB sync
+        await fetchDetails(true);
       }
     } catch (err) {
       console.error("Error editing member info:", err);
       showToast("Network error: Unable to update member info.", "error");
-      fetchDetails();
+      await fetchDetails();
     }
   };
 
@@ -530,9 +542,10 @@ export default function App() {
   }) => {
     const activeTenant = (chittiData.tenant_id || currentTenantId || managerEmail || "").trim().toLowerCase();
     if (!activeTenant) {
-      showToast("Error: Manager email/tenant not detected. Please sign in again.");
+      showToast("Error: Manager email/tenant not detected. Please sign in again.", "error");
       return;
     }
+    setIsCreatingChitti(true);
     try {
       const res = await fetch("/api/chittis", {
         method: "POST",
@@ -540,46 +553,87 @@ export default function App() {
         body: JSON.stringify({
           ...chittiData,
           tenant_id: activeTenant,
-          formula_id: currentFormulaId,
+          formula_id: currentFormulaId || "standard_chit_v1",
         }),
       });
       const data = await res.json();
       if (res.ok) {
+        const createdChitti = data.chitti || data;
+        const newId = createdChitti.chitti_id;
+        const newName = createdChitti.name || chittiData.name;
+
         setIsCreateChittiOpen(false);
-        showToast(`Chitti "${data.name}" successfully created and saved to database!`);
+        showToast(`Chitti "${newName}" successfully created and saved to database!`);
+
+        setLoading(true);
+        // Refresh chitti list from database
         const chittisRes = await fetch(`/api/chittis?tenant_id=${activeTenant}`);
         const chittisData = await chittisRes.json();
         setChittis(chittisData);
-        setCurrentChittiId(data.chitti_id);
+
+        if (createdChitti.formula_id) {
+          setCurrentFormulaId(createdChitti.formula_id);
+        }
+
+        if (newId) {
+          setCurrentChittiId(newId);
+          // Directly fetch details of the new chitti so it renders immediately with 0 blank time
+          try {
+            const detRes = await fetch(`/api/chittis/${newId}/details?tenant_id=${activeTenant}`);
+            if (detRes.ok) {
+              const detData = await detRes.json();
+              setDetails(detData);
+            }
+          } catch (e) {
+            console.error("Error fetching newly created chitti details:", e);
+          }
+        }
+        setLoading(false);
       } else {
-        showToast(data.error || "Failed to create chitti. Please check fields.");
+        showToast(data.error || "Failed to create chitti. Please check fields.", "error");
       }
     } catch (err) {
       console.error("Error creating chitti:", err);
-      showToast("Network error creating chitti. Please check connection.");
+      showToast("Network error creating chitti. Please check connection.", "error");
+    } finally {
+      setIsCreatingChitti(false);
     }
   };
 
   const handleDeleteChitti = async () => {
-    if (!currentChittiId || !currentTenantId) return;
+    if (!currentChittiId || !currentTenantId || isDeletingChitti) return;
+    const deletedName = details?.chitti?.name || currentChittiId;
+    setIsDeletingChitti(true);
     try {
       const res = await fetch(`/api/chittis/${currentChittiId}?tenant_id=${currentTenantId}`, {
         method: "DELETE",
       });
       if (res.ok) {
+        showToast(`Chitti "${deletedName}" and all associated records permanently deleted.`);
         setDetails(null);
+        setLoading(true);
         const chittisRes = await fetch(`/api/chittis?tenant_id=${currentTenantId}`);
         const chittisData = await chittisRes.json();
         setChittis(chittisData);
         if (chittisData.length > 0) {
-          setCurrentChittiId(chittisData[0].chitti_id);
+          const nextId = chittisData[0].chitti_id;
+          setCurrentChittiId(nextId);
           setCurrentFormulaId(chittisData[0].formula_id || "standard_chit_v1");
+          localStorage.setItem("clearflow_chitti_id", nextId);
         } else {
           setCurrentChittiId("");
+          localStorage.removeItem("clearflow_chitti_id");
         }
+        setLoading(false);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Failed to delete chitti from database.", "error");
       }
     } catch (err) {
       console.error("Error deleting chitti:", err);
+      showToast("Network error: Unable to delete chitti.", "error");
+    } finally {
+      setIsDeletingChitti(false);
     }
   };
 
@@ -756,39 +810,85 @@ export default function App() {
           </button>
         </div>
 
+        {/* Global Floating Operation Indicator Banner if an async mutation is processing */}
+        {(isRecordingPayment || isUpdatingWinner || isCreatingChitti || isDeletingChitti) && (
+          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white border border-sky-500/40 shadow-2xl px-4 py-2 rounded-full flex items-center gap-2.5 text-xs font-semibold backdrop-blur-md animate-pulse">
+            <Loader2 className="w-4 h-4 animate-spin text-sky-400 shrink-0" />
+            <span>
+              {isCreatingChitti && "Creating Scheme & Allocating Shares in NocoDB..."}
+              {isDeletingChitti && "Permanently Deleting Scheme & Wiping NocoDB Records..."}
+              {isRecordingPayment && "Recording Payment & Updating Ledger in NocoDB..."}
+              {isUpdatingWinner && "Synchronizing Winner Status & Dividends..."}
+            </span>
+          </div>
+        )}
+
         {/* Feed of Share ID Cards */}
         {chittisLoading ? (
-          <div className="py-16 text-center flex flex-col items-center justify-center gap-2 text-slate-500">
-            <RefreshCw className="w-6 h-6 animate-spin text-sky-600" />
-            <p className="text-sm">Loading manager workspace & chittis...</p>
-          </div>
-        ) : chittis.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-4 shadow-sm">
-            <div className="w-14 h-14 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold shadow-inner">
-              ⚡
+          <div className="py-20 text-center flex flex-col items-center justify-center gap-3.5 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-8">
+            <div className="relative flex items-center justify-center">
+              <div className="w-14 h-14 rounded-full border-4 border-sky-500/20 border-t-sky-600 animate-spin"></div>
+              <Loader2 className="w-7 h-7 text-sky-600 animate-spin absolute" />
             </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900">No Chittis Created Yet</h2>
-              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                Get started by creating your first chitti group. Set up members, monthly dues, commission rules, and automated tracking instantly.
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-slate-800">
+                Loading Manager Workspace & Chittis...
+              </h3>
+              <p className="text-xs text-slate-500">
+                Retrieving your tenant data and active schemes from NocoDB. Please wait...
               </p>
             </div>
-            <button
-              onClick={() => setIsCreateChittiOpen(true)}
-              className="bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-bold py-3 px-6 rounded-xl text-xs inline-flex items-center gap-2 shadow-lg shadow-sky-600/30 transition cursor-pointer"
-            >
-              <span>+ Create Your First Chitti</span>
-            </button>
           </div>
-        ) : loading ? (
-          <div className="py-16 text-center flex flex-col items-center justify-center gap-2 text-slate-500">
-            <RefreshCw className="w-6 h-6 animate-spin text-sky-600" />
-            <p className="text-xs">Computing chitti ledger and math formulas...</p>
+        ) : chittis.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center space-y-4 shadow-sm">
+            <div className="w-16 h-16 bg-gradient-to-tr from-sky-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold shadow-lg shadow-sky-500/20">
+              ⚡
+            </div>
+            <div className="space-y-1.5 max-w-md mx-auto">
+              <h2 className="text-lg font-bold text-slate-900">
+                Welcome, {managerEmail || currentTenantId}!
+              </h2>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                You do not have any active Chitti schemes created yet. Click below to launch your first Chitti scheme, configure members, and start recording dues.
+              </p>
+            </div>
+            <div className="pt-2">
+              <button
+                onClick={() => setIsCreateChittiOpen(true)}
+                className="bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-bold py-3.5 px-6 rounded-xl text-xs inline-flex items-center gap-2 shadow-lg shadow-sky-600/30 transition cursor-pointer"
+              >
+                <span>+ Create Your First Chitti</span>
+              </button>
+            </div>
+          </div>
+        ) : loading || !details ? (
+          <div className="py-20 text-center flex flex-col items-center justify-center gap-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-8">
+            <div className="relative flex items-center justify-center">
+              <div className="w-14 h-14 rounded-full border-4 border-sky-500/20 border-t-sky-600 animate-spin"></div>
+              <Loader2 className="w-7 h-7 text-sky-600 animate-spin absolute" />
+            </div>
+            <div className="space-y-1 max-w-sm">
+              <h3 className="text-sm font-bold text-slate-800">
+                Fetching Scheme Details & Ledger...
+              </h3>
+              <p className="text-xs text-slate-500">
+                Connecting to NocoDB and retrieving member shares, balances, and arrears. Please wait...
+              </p>
+            </div>
+            <div className="pt-2">
+              <button
+                onClick={handleManualRefresh}
+                className="text-xs text-sky-600 hover:text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-3.5 py-1.5 rounded-lg transition font-medium flex items-center gap-1.5 cursor-pointer mx-auto"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Taking longer than expected? Click to Refresh</span>
+              </button>
+            </div>
           </div>
         ) : filteredMembers.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500 shadow-sm">
-            <p className="text-sm font-medium">No member shares found.</p>
-            <p className="text-xs text-slate-400 mt-1">Try adjusting your search or status filter.</p>
+            <p className="text-sm font-medium">No member shares match your search or filter.</p>
+            <p className="text-xs text-slate-400 mt-1">Try resetting the status filter to "All" or clearing the search text.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -852,6 +952,7 @@ export default function App() {
             onDownloadStatement={handleDownloadChittiStatement}
             onDownloadHtml={handleDownloadHtmlReport}
             onDeleteChitti={handleDeleteChitti}
+            isDeleting={isDeletingChitti}
           />
         )}
       </main>
@@ -897,8 +998,9 @@ export default function App() {
       {isCreateChittiOpen && (
         <CreateChittiModal
           currentTenantId={currentTenantId || managerEmail || ""}
-          onClose={() => setIsCreateChittiOpen(false)}
+          onClose={() => !isCreatingChitti && setIsCreateChittiOpen(false)}
           onSubmit={handleCreateChitti}
+          isSubmitting={isCreatingChitti}
         />
       )}
 

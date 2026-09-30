@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { TreasuryData, ChittiExpense } from "../types";
-import { ChevronUp, ChevronDown, Wallet, ArrowUpRight, ShieldCheck, DollarSign, CheckCircle2, Download, FileCode, Trash2, Plus, Receipt, AlertTriangle } from "lucide-react";
+import { ChevronUp, ChevronDown, Wallet, ArrowUpRight, ShieldCheck, DollarSign, CheckCircle2, Download, FileCode, Trash2, Plus, Receipt, AlertTriangle, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface ManagerTreasurySheetProps {
@@ -12,7 +12,8 @@ interface ManagerTreasurySheetProps {
   payoutT: number;
   onDownloadStatement: () => void;
   onDownloadHtml: () => void;
-  onDeleteChitti: () => void;
+  onDeleteChitti: () => Promise<void> | void;
+  isDeleting?: boolean;
 }
 
 export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
@@ -25,6 +26,7 @@ export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
   onDownloadStatement,
   onDownloadHtml,
   onDeleteChitti,
+  isDeleting = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -315,8 +317,29 @@ export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
 
       {/* Stage 4 Final Confirmation Modal */}
       {deleteStage === 3 && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-rose-500/40 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-4 text-center">
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="relative bg-slate-900 border border-rose-500/40 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4 text-center overflow-hidden">
+            {/* Round Circling Processing Overlay during deletion */}
+            {isDeleting && (
+              <div className="absolute inset-0 z-30 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center space-y-4 text-white">
+                <div className="relative flex items-center justify-center">
+                  <div className="w-16 h-16 rounded-full border-4 border-rose-500/20 border-t-rose-500 animate-spin"></div>
+                  <Loader2 className="w-8 h-8 text-rose-500 animate-spin absolute" />
+                </div>
+                <div className="space-y-1.5 max-w-xs">
+                  <h4 className="text-base font-bold text-white">
+                    Permanently Erasing Chitti Scheme...
+                  </h4>
+                  <p className="text-xs text-slate-300">
+                    Deleting all member shares, payments, expenses, and ledger entries from NocoDB.
+                  </p>
+                  <div className="pt-2 text-[11px] text-amber-300 font-medium bg-amber-950/60 border border-amber-800/50 rounded-lg px-3 py-1.5">
+                    ⏳ Please wait, do not close or interrupt this window.
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="w-12 h-12 bg-rose-600 text-white rounded-full flex items-center justify-center mx-auto shadow-lg animate-bounce">
               <Trash2 className="w-6 h-6" />
             </div>
@@ -329,19 +352,31 @@ export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
 
             <div className="grid grid-cols-2 gap-2 pt-2">
               <button
+                disabled={isDeleting}
                 onClick={() => setDeleteStage(0)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-xl text-xs font-medium transition"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-xl text-xs font-medium transition disabled:opacity-50 cursor-pointer"
               >
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  setDeleteStage(0);
-                  onDeleteChitti();
+                disabled={isDeleting}
+                onClick={async () => {
+                  try {
+                    await onDeleteChitti();
+                  } finally {
+                    setDeleteStage(0);
+                  }
                 }}
-                className="bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white py-2.5 rounded-xl text-xs font-bold shadow-lg transition"
+                className="bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white py-2.5 rounded-xl text-xs font-bold shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                Yes, Delete
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Erasing...</span>
+                  </>
+                ) : (
+                  <span>Yes, Delete</span>
+                )}
               </button>
             </div>
           </div>

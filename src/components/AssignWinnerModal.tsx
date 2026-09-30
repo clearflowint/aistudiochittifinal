@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { MemberShare } from "../types";
-import { X, Award, RotateCcw } from "lucide-react";
+import { X, Award, RotateCcw, Loader2 } from "lucide-react";
 
 interface AssignWinnerModalProps {
   share: MemberShare;
@@ -46,14 +46,39 @@ export const AssignWinnerModal: React.FC<AssignWinnerModalProps> = ({
   const availableMonths = Array.from({ length: activeMonth }, (_, i) => i + 1);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm border border-slate-200 overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden animate-in fade-in zoom-in duration-200">
+        {/* Processing Spinner Overlay */}
+        {isSubmitting && (
+          <div className="absolute inset-0 z-20 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center space-y-3 text-white">
+            <div className="relative flex items-center justify-center">
+              <div className="w-14 h-14 rounded-full border-4 border-amber-500/20 border-t-amber-400 animate-spin"></div>
+              <Loader2 className="w-7 h-7 text-amber-400 animate-spin absolute" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-bold text-white">
+                Updating Winner Status...
+              </h4>
+              <p className="text-xs text-slate-300">
+                Recalculating dividend dues and updating NocoDB records for {share.member_name}.
+              </p>
+              <p className="text-[10px] text-amber-300 font-medium pt-1">
+                ⏳ Synchronizing chitti disbursements...
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
           <div className="flex items-center gap-2">
             <Award className="w-4 h-4 text-amber-400" />
             <h3 className="font-bold text-sm">Assign or Revoke Winner Status</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-white transition">
+          <button
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="p-1 rounded-lg text-slate-400 hover:text-white transition disabled:opacity-30 cursor-pointer"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
