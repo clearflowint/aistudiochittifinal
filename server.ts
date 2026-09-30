@@ -267,6 +267,137 @@ async function recalculateAndPersistChittiSummary(chittiId: string, updatedShare
   }
 }
 
+// Background routine to calculate and populate all newly created columns for existing chittis and shares
+async function recalculateAndPopulateAllExistingChittisAndShares() {
+  console.log("[MIGRATION] Starting recalculate and populate for all existing chittis and shares...");
+  try {
+    const dbChittis = await getAllRecords("chittis");
+    const dbShares = await getAllRecords("shares");
+    const dbTxs = await getAllRecords("transactions");
+
+    if (!dbChittis || dbChittis.length === 0) {
+      console.log("[MIGRATION] No chittis found to migrate.");
+      return { chittisUpdated: 0, sharesUpdated: 0 };
+    }
+
+    const now = new Date();
+    const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    let chittisUpdatedCount = 0;
+    let sharesUpdatedCount = 0;
+
+    for (const chitti of dbChittis) {
+      const chittiId = chitti.chitti_id;
+      if (!chittiId) continue;
+
+      const N = Number(chitti.total_members) || 20;
+      const totalMonths = Number(chitti.total_months) || 20;
+      const U = Number(chitti.u_due) || 5000;
+      const D = Number(chitti.d_due) || 6000;
+      const F = Number(chitti.commission) || 2000;
+      const formulaId = chitti.formula_id || "standard_chit_v1";
+
+      // Compute calendar current month
+      const start = new Date(chitti.start_date || "2025-01-01");
+      const diffYears = now.getFullYear() - start.getFullYear();
+      const diffMonths = now.getMonth() - start.getMonth();
+      const elapsed = diffYears * 12 + diffMonths + 1;
+      const t = Math.max(1, Math.min(elapsed, totalMonths));
+
+      // Compute/validate payout schedule
+      let scheduleArr = [];
+      try {
+        scheduleArr = chitti.payout_schedule ? JSON.parse(chitti.payout_schedule) : [];
+      } catch (e) {}
+
+      if (scheduleArr.length === 0 || scheduleArr.length !== totalMonths) {
+        scheduleArr = [];
+        for (let m = 1; m <= totalMonths; m++) {
+          const p = calculateFormulaPayout(m, N, U, D, F, formulaId);
+          scheduleArr.push({ month: m, payout: p });
+        }
+      }
+
+      const chittiShares = (dbShares || []).filter((s: any) => String(s.chitti_id) === String(chittiId));
+      const chittiTxs = (dbTxs || []).filter((tx: any) => String(tx.chitti_id) === String(chittiId) && !tx.is_void);
+
+      let totalArrears = 0;
+
+      // Update all member shares for this chitti
+      for (const share of chittiShares) {
+        let totalBilled = 0;
+        let monthlyDueNow = U;
+        for (let m = 1; m <= t; m++) {
+          const dueForMonth = calculateFormulaDue(m, share.win_month, U, D, N, F, formulaId);
+          totalBilled += dueForMonth;
+          if (m === t) {
+            monthlyDueNow = dueForMonth;
+          }
+        }
+
+        const shareTxs = chittiTxs.filter((tx: any) => String(tx.share_id) === String(share.share_id));
+        const totalPaid = shareTxs.reduce((sum: number, tx: any) => sum + (Number(tx.amount) || 0), 0);
+        const netBalance = totalPaid - totalBilled;
+        const pending = netBalance < 0 ? Math.abs(netBalance) : 0;
+        const advance = netBalance > 0 ? netBalance : 0;
+
+        if (pending > 0) {
+          totalArrears += pending;
+        }
+
+        share.total_billed = totalBilled;
+        share.total_paid = totalPaid;
+        share.net_balance = netBalance;
+        share.pending_amount = pending;
+        share.advance_amount = advance;
+        share.monthly_due_current = monthlyDueNow;
+
+        try {
+          await upsertRecord("shares", "share_id", share.share_id, share);
+          sharesUpdatedCount++;
+        } catch (e) {
+          console.error(`Failed to update share ${share.share_id} in migration:`, e);
+        }
+      }
+
+      // Calculate cumulative disbursement
+      let cumulativeDisbursement = 0;
+      for (let m = 1; m <= t; m++) {
+        const p_item = scheduleArr.find((s: any) => s.month === m);
+        const p_m = p_item ? p_item.payout : calculateFormulaPayout(m, N, U, D, F, formulaId);
+        const countWinnersM = chittiShares.filter((s: any) => s.win_month === m).length;
+        cumulativeDisbursement += countWinnersM * p_m;
+      }
+
+      const totalCashCollected = chittiTxs.reduce((sum: number, tx: any) => sum + (Number(tx.amount) || 0), 0);
+      const cumulativeCommission = t * F;
+      const netBalance = totalCashCollected - cumulativeDisbursement;
+
+      chitti.current_month = t;
+      chitti.last_checked_date = currentYearMonth;
+      chitti.payout_schedule = JSON.stringify(scheduleArr);
+      chitti.total_arrears = totalArrears;
+      chitti.cumulative_commission = cumulativeCommission;
+      chitti.total_disbursed = cumulativeDisbursement;
+      chitti.total_cash_collected = totalCashCollected;
+      chitti.net_balance = netBalance;
+
+      try {
+        await upsertRecord("chittis", "chitti_id", chitti.chitti_id, chitti);
+        chittisUpdatedCount++;
+      } catch (e) {
+        console.error(`Failed to update chitti ${chitti.chitti_id} in migration:`, e);
+      }
+    }
+
+    console.log(`[MIGRATION COMPLETED] Successfully populated ${chittisUpdatedCount} chittis and ${sharesUpdatedCount} shares.`);
+    return { chittisUpdated: chittisUpdatedCount, sharesUpdated: sharesUpdatedCount };
+  } catch (err) {
+    console.error("[MIGRATION ERROR] Failed to populate existing records:", err);
+    return { error: String(err) };
+  }
+}
+
 // 24-hour in-flight Idempotency cache (pure request deduplication, zero entity caching)
 const idempotencyCache = new Map<string, any>();
 
@@ -280,11 +411,23 @@ async function startServer() {
   try {
     await initializeNocoDBTables();
     console.log("[ZERO CACHE] Server booted in pure stateless mode. NocoDB is the single source of truth.");
+    // Populate newly created columns for all existing chittis and shares asynchronously
+    recalculateAndPopulateAllExistingChittisAndShares().catch((err) => {
+      console.error("Auto-population of existing chittis/shares failed:", err);
+    });
   } catch (err) {
     console.error("NocoDB table initialization check failed on startup:", err);
   }
 
   // API Routes
+  app.post("/api/admin/repopulate-all-columns", async (req, res) => {
+    try {
+      const result = await recalculateAndPopulateAllExistingChittisAndShares();
+      res.json({ success: true, result });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
   app.get("/api/sync-nocodb", async (req, res) => {
     try {
       await initializeNocoDBTables();
@@ -437,6 +580,11 @@ async function startServer() {
       return res.status(500).json({ success: false, error: "Database network error during chitti creation", details: String(err) });
     }
 
+    let initialBilledPerUndrawnShare = 0;
+    for (let m = 1; m <= initialCurrentMonth; m++) {
+      initialBilledPerUndrawnShare += calculateFormulaDue(m, null, uDue, dDue, tMembers, comm, fId);
+    }
+
     const newSharesList: any[] = [];
     for (let i = 1; i <= newChitti.total_members; i++) {
       const newShare = {
@@ -447,10 +595,11 @@ async function startServer() {
         phone: "+910000000000",
         win_month: null,
         total_paid: 0,
-        total_billed: 0,
-        net_balance: 0,
-        pending_amount: 0,
+        total_billed: initialBilledPerUndrawnShare,
+        net_balance: -initialBilledPerUndrawnShare,
+        pending_amount: initialBilledPerUndrawnShare,
         advance_amount: 0,
+        monthly_due_current: uDue,
       };
       newSharesList.push(newShare);
     }
@@ -573,46 +722,121 @@ async function startServer() {
       const chittiTxs = (dbTxs || []).filter((tx: any) => String(tx.chitti_id) === String(chitti_id));
 
       let totalPendingMarket = 0;
+      let totalArrearsComputed = 0;
+      const sharesToSyncInDB: any[] = [];
+
       const memberDetails = chittiShares.map((share: any) => {
-        const pending = Number(share.pending_amount) !== undefined && !isNaN(Number(share.pending_amount))
-          ? Number(share.pending_amount)
-          : (Number(share.net_balance) < 0 ? Math.abs(Number(share.net_balance)) : 0);
+        let totalBilled = 0;
+        let monthlyDueNow = U;
+        for (let m = 1; m <= t; m++) {
+          const dueForMonth = calculateFormulaDue(m, share.win_month, U, D, N, F, formulaId);
+          totalBilled += dueForMonth;
+          if (m === t) {
+            monthlyDueNow = dueForMonth;
+          }
+        }
+
+        const shareTxs = chittiTxs.filter((tx: any) => String(tx.share_id) === String(share.share_id) && !tx.is_void);
+        const totalPaid = shareTxs.reduce((sum: number, tx: any) => sum + (Number(tx.amount) || 0), 0);
+        const netBalance = totalPaid - totalBilled;
+        const pending = netBalance < 0 ? Math.abs(netBalance) : 0;
+        const advance = netBalance > 0 ? netBalance : 0;
 
         if (pending > 0) {
           totalPendingMarket += pending;
+          totalArrearsComputed += pending;
         }
 
         const status =
           share.win_month !== null && Number(share.win_month) <= t ? `Drawn M${share.win_month}` : "Undrawn";
 
-        const shareTxs = chittiTxs.filter((tx: any) => String(tx.share_id) === String(share.share_id) && !tx.is_void);
+        if (
+          Number(share.total_billed) !== totalBilled ||
+          Number(share.total_paid) !== totalPaid ||
+          Number(share.net_balance) !== netBalance ||
+          Number(share.pending_amount) !== pending ||
+          Number(share.monthly_due_current) !== monthlyDueNow
+        ) {
+          sharesToSyncInDB.push({
+            ...share,
+            total_billed: totalBilled,
+            total_paid: totalPaid,
+            net_balance: netBalance,
+            pending_amount: pending,
+            advance_amount: advance,
+            monthly_due_current: monthlyDueNow,
+          });
+        }
 
         return {
           ...share,
           status,
-          monthly_due_current: Number(share.monthly_due_current) || U,
-          total_billed: Number(share.total_billed) || 0,
-          total_paid: Number(share.total_paid) || 0,
-          net_balance: Number(share.net_balance) || 0,
+          monthly_due_current: monthlyDueNow,
+          total_billed: totalBilled,
+          total_paid: totalPaid,
+          net_balance: netBalance,
           pending_amount: pending,
-          advance_amount: Number(share.advance_amount) || (Number(share.net_balance) > 0 ? Number(share.net_balance) : 0),
+          advance_amount: advance,
           transactions: shareTxs,
         };
       });
 
-      // Manager ledger and payout arrears fetched directly from database columns with zero calculation loops
+      // Background asynchronous sync to NocoDB so database records are updated without slowing down response
+      if (sharesToSyncInDB.length > 0) {
+        (async () => {
+          for (const s of sharesToSyncInDB) {
+            try {
+              await upsertRecord("shares", "share_id", s.share_id, s);
+            } catch (e) {
+              console.error(`Failed to background sync share ${s.share_id}:`, e);
+            }
+          }
+        })();
+      }
+
+      let cumulativeDisbursement = 0;
+      for (let m = 1; m <= t; m++) {
+        const p_item = scheduleArr.find((s: any) => s.month === m);
+        const p_m = p_item ? p_item.payout : calculateFormulaPayout(m, N, U, D, F, formulaId);
+        const countWinnersM = chittiShares.filter((s: any) => s.win_month === m).length;
+        cumulativeDisbursement += countWinnersM * p_m;
+      }
+
+      const totalCashCollected = chittiTxs
+        .filter((tx: any) => !tx.is_void)
+        .reduce((sum: number, tx: any) => sum + (Number(tx.amount) || 0), 0);
+
+      const netCashflow = totalCashCollected - cumulativeDisbursement;
+
+      if (
+        Number(chitti.total_arrears) !== totalArrearsComputed ||
+        Number(chitti.total_cash_collected) !== totalCashCollected ||
+        Number(chitti.total_disbursed) !== cumulativeDisbursement ||
+        Number(chitti.net_balance) !== netCashflow
+      ) {
+        updateRecord("chittis", {
+          chitti_id: chitti.chitti_id,
+          Id: chitti.Id || chitti.id,
+          total_arrears: totalArrearsComputed,
+          total_cash_collected: totalCashCollected,
+          total_disbursed: cumulativeDisbursement,
+          net_balance: netCashflow,
+          cumulative_commission: t * F,
+        }).catch((err) => console.error("Error updating chitti summary in background:", err));
+      }
+
       res.json({
         chitti,
         active_month: t,
         payout_t: payout_t,
         total_pending_market: totalPendingMarket,
         treasury: {
-          total_arrears: Number(chitti.total_arrears) || 0,
+          total_arrears: totalArrearsComputed,
           cumulative_commission: Number(chitti.cumulative_commission) || (t * F),
-          cumulative_disbursement: Number(chitti.total_disbursed) || 0,
-          actual_cash_collected: Number(chitti.total_cash_collected) || 0,
-          net_cashflow: Number(chitti.net_balance) || 0,
-          closing_ledger_balance: Number(chitti.net_balance) || 0,
+          cumulative_disbursement: cumulativeDisbursement,
+          actual_cash_collected: totalCashCollected,
+          net_cashflow: netCashflow,
+          closing_ledger_balance: netCashflow,
           flat_commission: F,
           current_payout_t: payout_t,
           total_pending_in_market: totalPendingMarket,

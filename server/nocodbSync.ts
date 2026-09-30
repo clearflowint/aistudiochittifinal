@@ -131,7 +131,12 @@ function normalizeRecord(tableName: string, r: any) {
     const current_month = Number(getProp("current_month", "currentMonth")) || 1;
     const payout_schedule = getProp("payout_schedule", "payoutSchedule");
     const last_checked_date = getProp("last_checked_date", "lastCheckedDate");
-    return { ...r, chitti_id, tenant_id, formula_id, name, start_date, total_members, total_months, u_due, d_due, commission, current_month, payout_schedule, last_checked_date };
+    const total_arrears = Number(getProp("total_arrears", "totalArrears")) || 0;
+    const cumulative_commission = Number(getProp("cumulative_commission", "cumulativeCommission")) || 0;
+    const total_disbursed = Number(getProp("total_disbursed", "totalDisbursed")) || 0;
+    const total_cash_collected = Number(getProp("total_cash_collected", "totalCashCollected")) || 0;
+    const net_balance = Number(getProp("net_balance", "netBalance")) || 0;
+    return { ...r, chitti_id, tenant_id, formula_id, name, start_date, total_members, total_months, u_due, d_due, commission, current_month, payout_schedule, last_checked_date, total_arrears, cumulative_commission, total_disbursed, total_cash_collected, net_balance };
   }
   if (tableName === "shares") {
     const share_id = getProp("share_id", "shareId", "id");
@@ -140,7 +145,13 @@ function normalizeRecord(tableName: string, r: any) {
     const member_name = getProp("member_name", "memberName", "name") || "Member";
     const phone = getProp("phone") || "";
     const win_month = getProp("win_month", "winMonth");
-    return { ...r, share_id, chitti_id, tenant_id, member_name, phone, win_month: win_month !== undefined && win_month !== "" && win_month !== null ? Number(win_month) : null };
+    const total_paid = Number(getProp("total_paid", "totalPaid")) || 0;
+    const total_billed = Number(getProp("total_billed", "totalBilled")) || 0;
+    const net_balance = Number(getProp("net_balance", "netBalance")) || 0;
+    const pending_amount = Number(getProp("pending_amount", "pendingAmount")) || 0;
+    const advance_amount = Number(getProp("advance_amount", "advanceAmount")) || 0;
+    const monthly_due_current = Number(getProp("monthly_due_current", "monthlyDueCurrent")) || 0;
+    return { ...r, share_id, chitti_id, tenant_id, member_name, phone, win_month: win_month !== undefined && win_month !== "" && win_month !== null ? Number(win_month) : null, total_paid, total_billed, net_balance, pending_amount, advance_amount, monthly_due_current };
   }
   if (tableName === "transactions") {
     const tx_id = getProp("tx_id", "txId", "id");
@@ -492,7 +503,8 @@ export async function initializeNocoDBTables() {
     { column_name: "total_billed", uidt: "Number" },
     { column_name: "net_balance", uidt: "Number" },
     { column_name: "pending_amount", uidt: "Number" },
-    { column_name: "advance_amount", uidt: "Number" }
+    { column_name: "advance_amount", uidt: "Number" },
+    { column_name: "monthly_due_current", uidt: "Number" }
   ]);
 
   await ensureTableExists("transactions", [
