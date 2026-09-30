@@ -14,6 +14,7 @@ interface ManagerTreasurySheetProps {
   onDownloadHtml: () => void;
   onDeleteChitti: () => Promise<void> | void;
   isDeleting?: boolean;
+  isReadOnly?: boolean;
 }
 
 export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
@@ -27,6 +28,7 @@ export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
   onDownloadHtml,
   onDeleteChitti,
   isDeleting = false,
+  isReadOnly = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -60,8 +62,8 @@ export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
       .catch((err) => console.error("Error fetching chitti others:", err));
   }, [chittiId, tenantId]);
 
-  const handleAddExpense = async (e: React.FormEvent | React.MouseEvent) => {
-    e.preventDefault?.();
+  const handleAddExpense = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault?.();
     if (!expTitle.trim() || !expAmount) return;
     if (!chittiId || !tenantId) return;
     try {
@@ -244,9 +246,20 @@ export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
                   />
                   <button
                     type="button"
-                    onClick={handleAddExpense}
-                    className="bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white p-1.5 rounded-lg shrink-0 transition cursor-pointer"
-                    title="Add Entry"
+                    onClick={() => {
+                      if (isReadOnly) {
+                        alert("Database is currently offline. Adding records is paused to protect ledger integrity.");
+                        return;
+                      }
+                      handleAddExpense();
+                    }}
+                    disabled={isReadOnly}
+                    className={`p-1.5 rounded-lg shrink-0 transition ${
+                      isReadOnly
+                        ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                        : "bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white cursor-pointer"
+                    }`}
+                    title={isReadOnly ? "Locked: Database offline" : "Add Entry"}
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -258,11 +271,20 @@ export const ManagerTreasurySheet: React.FC<ManagerTreasurySheetProps> = ({
             <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
               <span className="text-[11px] text-slate-400">Danger Zone: Remove this Chitti ID</span>
               <button
-                onClick={handleDeleteTrigger}
+                onClick={() => {
+                  if (isReadOnly) {
+                    alert("Database is currently offline. Deleting chitti is disabled.");
+                    return;
+                  }
+                  handleDeleteTrigger();
+                }}
+                disabled={isReadOnly}
                 className={`text-xs font-bold px-3 py-2 rounded-xl transition ${
-                  deleteStage === 0
-                    ? "bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-500/40"
-                    : "bg-amber-600 hover:bg-amber-500 text-white animate-pulse"
+                  isReadOnly
+                    ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
+                    : deleteStage === 0
+                    ? "bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-500/40 cursor-pointer"
+                    : "bg-amber-600 hover:bg-amber-500 text-white animate-pulse cursor-pointer"
                 }`}
               >
                 {deleteStage === 0 && "🗑️ Delete Chitti"}

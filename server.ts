@@ -482,6 +482,31 @@ async function startServer() {
     res.json({ authorized: true, email: cleanEmail });
   });
 
+  app.get("/api/health", async (_req, res) => {
+    try {
+      const isOnline = await checkNocoDBConnection();
+      if (!isOnline) {
+        return res.status(503).json({
+          status: "degraded",
+          db_online: false,
+          message: "Database is currently offline or unreachable",
+        });
+      }
+      return res.json({
+        status: "ok",
+        db_online: true,
+        message: "Database connection active and synchronized",
+      });
+    } catch (err: any) {
+      return res.status(503).json({
+        status: "down",
+        db_online: false,
+        message: "Database connection failed",
+        error: String(err),
+      });
+    }
+  });
+
   app.get("/api/tenants", async (req, res) => {
     try {
       const dbTenants = await getAllRecords("tenants");
@@ -515,9 +540,12 @@ async function startServer() {
         return cTenant === cleanReq;
       });
       return res.json(filtered);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch chittis live from NocoDB:", err);
-      return res.json([]);
+      return res.status(503).json({
+        error: "database_offline",
+        message: "Database is currently offline or unreachable",
+      });
     }
   });
 
@@ -777,9 +805,12 @@ async function startServer() {
         },
         members: memberDetails,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching live chitti details from NocoDB:", err);
-      return res.status(500).json({ error: "Failed to fetch live chitti details from database" });
+      return res.status(503).json({
+        error: "database_offline",
+        message: "Database is currently offline or unreachable",
+      });
     }
   });
 

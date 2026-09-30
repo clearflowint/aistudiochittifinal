@@ -30,7 +30,8 @@ function cleanRecord(tableName: string, record: any) {
 
 export async function checkNocoDBConnection(): Promise<boolean> {
   try {
-    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, { headers });
+    const res = await fetchWithTimeout(`${NOCODB_URL}/api/v1/db/meta/projects/${BASE_ID}/tables`, { headers }, 4000);
+    if (!res.ok) return false;
     const data = await res.json() as any;
     return !!data && Array.isArray(data.list);
   } catch (err) {
@@ -183,19 +184,22 @@ export async function getAllRecords(tableName: string) {
     const target = tableId || tableName;
     const url = `${NOCODB_URL}/api/v1/db/data/v1/${BASE_ID}/${target}?limit=1000`;
     console.log(`[NocoDB FETCH] GET ${url}`);
-    const res = await fetchWithTimeout(url, { headers });
+    const res = await fetchWithTimeout(url, { headers }, 8000);
     if (!res.ok) {
       const errText = await res.text();
       console.error(`NocoDB ${tableName} fetch failed (${res.status}) [url: ${url}]:`, errText);
-      return [];
+      const dbErr: any = new Error(`NocoDB ${tableName} fetch failed (${res.status})`);
+      dbErr.status = res.status;
+      dbErr.isDbOffline = true;
+      throw dbErr;
     }
     const data = await res.json() as any;
     const list = data.list || [];
     console.log(`[NocoDB FETCH SUCCESS] ${tableName}: retrieved ${list.length} records`);
     return list.map((r: any) => normalizeRecord(tableName, r));
-  } catch (err) {
+  } catch (err: any) {
     console.error(`Error fetching records from ${tableName}:`, err);
-    return [];
+    throw err;
   }
 }
 

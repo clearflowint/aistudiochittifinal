@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { MemberShare, ChittiMaster } from "../types";
-import { Phone, CheckCircle2, AlertCircle, Award, CreditCard, User, MessageSquare, Edit2, FileText } from "lucide-react";
+import { Phone, CheckCircle2, AlertCircle, Award, CreditCard, User, MessageSquare, Edit2, FileText, Lock } from "lucide-react";
 import { ShareStatementModal } from "./ShareStatementModal";
 
 interface ShareCardProps {
@@ -10,6 +10,7 @@ interface ShareCardProps {
   onRecordPayment: (share: MemberShare) => void;
   onAssignWinner: (share: MemberShare) => void;
   onEditMember: (share: MemberShare) => void;
+  isReadOnly?: boolean;
 }
 
 export const ShareCard: React.FC<ShareCardProps> = ({
@@ -19,6 +20,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({
   onRecordPayment,
   onAssignWinner,
   onEditMember,
+  isReadOnly = false,
 }) => {
   const [isStatementOpen, setIsStatementOpen] = useState<boolean>(false);
   const isDrawn = share.win_month !== null;
@@ -107,16 +109,22 @@ export const ShareCard: React.FC<ShareCardProps> = ({
         {/* Bottom Row: All buttons grouped starting from the left to prevent right-side miss-touches */}
         <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
           <button
-            onClick={() => onEditMember(share)}
-            className="text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 text-sm font-medium flex items-center gap-1 transition py-1.5 px-2 rounded-lg border border-slate-200"
+            onClick={() => !isReadOnly && onEditMember(share)}
+            disabled={isReadOnly}
+            title={isReadOnly ? "Locked: Database offline" : "Edit member details"}
+            className={`text-sm font-medium flex items-center gap-1 transition py-1.5 px-2 rounded-lg border ${
+              isReadOnly
+                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60"
+                : "text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border-slate-200 cursor-pointer"
+            }`}
           >
-            <Edit2 className="w-4 h-4 text-slate-500" />
+            {isReadOnly ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <Edit2 className="w-4 h-4 text-slate-500" />}
             Edit Info
           </button>
           
           <button
             onClick={() => setIsStatementOpen(true)}
-            className="bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200 text-sm font-semibold px-2 py-1.5 rounded-lg flex items-center gap-1 transition"
+            className="bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200 text-sm font-semibold px-2 py-1.5 rounded-lg flex items-center gap-1 transition cursor-pointer"
             title="View full Share ID statement ledger"
           >
             <FileText className="w-4 h-4 text-sky-600" />
@@ -124,21 +132,24 @@ export const ShareCard: React.FC<ShareCardProps> = ({
           </button>
 
           <button
-            onClick={() => onAssignWinner(share)}
+            onClick={() => !isReadOnly && onAssignWinner(share)}
+            disabled={isReadOnly}
+            title={isReadOnly ? "Locked: Database offline" : "Click to change winner status"}
             className={`text-sm font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition ${
-              isDrawn
-                ? "bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
-                : "bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100"
+              isReadOnly
+                ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60"
+                : isDrawn
+                ? "bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 cursor-pointer"
+                : "bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 cursor-pointer"
             }`}
-            title="Click to change winner status"
           >
-            <Award className="w-4 h-4" />
+            {isReadOnly ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <Award className="w-4 h-4" />}
             {share.status}
           </button>
 
           <button
             onClick={handleSendReminder}
-            className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-sm font-semibold px-2.5 py-1.5 rounded-lg shadow-sm flex items-center gap-1 transition"
+            className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-sm font-semibold px-2.5 py-1.5 rounded-lg shadow-sm flex items-center gap-1 transition cursor-pointer"
             title="Send WhatsApp payment reminder"
           >
             <MessageSquare className="w-4 h-4" />
@@ -146,10 +157,16 @@ export const ShareCard: React.FC<ShareCardProps> = ({
           </button>
 
           <button
-            onClick={() => onRecordPayment(share)}
-            className="bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white text-sm font-semibold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 transition"
+            onClick={() => !isReadOnly && onRecordPayment(share)}
+            disabled={isReadOnly}
+            title={isReadOnly ? "Locked: Database offline" : "Record payment"}
+            className={`text-sm font-semibold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 transition ${
+              isReadOnly
+                ? "bg-slate-300 text-slate-500 border border-slate-300 cursor-not-allowed opacity-70"
+                : "bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white cursor-pointer"
+            }`}
           >
-            <CreditCard className="w-4 h-4" />
+            {isReadOnly ? <Lock className="w-3.5 h-3.5" /> : <CreditCard className="w-4 h-4" />}
             Record Payment
           </button>
         </div>

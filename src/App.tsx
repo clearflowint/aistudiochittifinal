@@ -7,7 +7,7 @@ import { RecordPaymentModal } from "./components/RecordPaymentModal";
 import { AssignWinnerModal } from "./components/AssignWinnerModal";
 import { EditMemberModal } from "./components/EditMemberModal";
 import { CreateChittiModal } from "./components/CreateChittiModal";
-import { Search, RefreshCw, MessageSquare, Loader2, Sparkles, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Search, RefreshCw, MessageSquare, Loader2, Sparkles, AlertCircle, CheckCircle2, AlertTriangle, Database, Lock } from "lucide-react";
 import { LandingPage } from "./components/LandingPage";
 import { ManagerDashboard } from "./components/ManagerDashboard";
 import { GuestPortal } from "./components/GuestPortal";
@@ -37,11 +37,18 @@ export default function App() {
     return localStorage.getItem("clearflow_chitti_id") || "";
   });
 
+  // Database Offline / Client-Side Cached Snapshot States
+  const [isDbOffline, setIsDbOffline] = useState<boolean>(false);
+  const [isReadOnlyMode, setIsReadOnlyMode] = useState<boolean>(false);
+  const [cacheTimestamp, setCacheTimestamp] = useState<string>("");
+  const [isCheckingConnection, setIsCheckingConnection] = useState<boolean>(false);
+
   // Explicit operation delay & processing states
   const [isRecordingPayment, setIsRecordingPayment] = useState<boolean>(false);
   const [isCreatingChitti, setIsCreatingChitti] = useState<boolean>(false);
   const [isUpdatingWinner, setIsUpdatingWinner] = useState<boolean>(false);
   const [isDeletingChitti, setIsDeletingChitti] = useState<boolean>(false);
+  const [isEditingMember, setIsEditingMember] = useState<boolean>(false);
 
   // Persist session state in localStorage so reloads and PWA shortcuts retain the exact workspace view & tenant
   useEffect(() => {
@@ -121,42 +128,180 @@ export default function App() {
       .catch((err) => console.error("Error fetching math templates:", err));
   }, []);
 
-  // Load chittis when manager email changes
-  useEffect(() => {
+  // Client-Side Snapshot Cache Helpers (Stateless backend, device-local resilience)
+  const saveChittisCache = (tenantId: string, data: ChittiMaster[]) => {
+    try {
+      localStorage.setItem(
+        `clearflow_cache_chittis_${tenantId}`,
+        JSON.stringify({ data, timestamp: Date.now() })
+      );
+    } catch (e) {}
+  };
+
+  const loadChittisCache = (tenantId: string) => {
+    try {
+      const raw = localStorage.getItem(`clearflow_cache_chittis_${tenantId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.data)) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const saveDetailsCache = (tenantId: string, chittiId: string, data: any) => {
+    try {
+      localStorage.setItem(
+        `clearflow_cache_details_${tenantId}_${chittiId}`,
+        JSON.stringify({ data, timestamp: Date.now() })
+      );
+    } catch (e) {}
+  };
+
+  const loadDetailsCache = (tenantId: string, chittiId: string) => {
+    try {
+      const raw = localStorage.getItem(`clearflow_cache_details_${tenantId}_${chittiId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.data) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const handleDbOfflineFallback = (tenantId: string) => {
+    setIsDbOffline(true);
+    setIsReadOnlyMode(true);
+    setChittisLoading(false);
+    const cached = loadChittisCache(tenantId);
+    if (cached && cached.data.length > 0) {
+      setChittis(cached.data);
+      const timeStr = new Date(cached.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
+      setCacheTimestamp(timeStr);
+      if (!currentChittiId || !cached.data.some((c: any) => c.chitti_id === currentChittiId)) {
+        setCurrentChittiId(cached.data[0].chitti_id);
+        setCurrentFormulaId(cached.data[0].formula_id || "standard_chit_v1");
+      }
+    }
+  };
+
+  const handleDetailsOfflineFallback = (tenantId: string, chittiId: string) => {
+    setIsDbOffline(true);
+    setIsReadOnlyMode(true);
+    setLoading(false);
+    setIsRefreshing(false);
+    const cached = loadDetailsCache(tenantId, chittiId);
+    if (cached && cached.data) {
+      setDetails(cached.data);
+      const timeStr = new Date(cached.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
+      setCacheTimestamp(timeStr);
+    }
+  };
+
+  const fetchChittis = async (silent = false) => {
     if (!currentTenantId) {
       setChittisLoading(false);
       return;
     }
-    setChittisLoading(true);
-    setDetails(null); // Clear previous chitti cache immediately to prevent cross-chitti leak
-    fetch(`/api/chittis?tenant_id=${currentTenantId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        const list = Array.isArray(data) ? data : [];
-        setChittis(list);
-        setChittisLoading(false);
-        if (list.length > 0) {
-          const exists = list.some((c) => c.chitti_id === currentChittiId);
-          if (!exists) {
-            setCurrentChittiId(list[0].chitti_id);
-            setCurrentFormulaId(list[0].formula_id || "standard_chit_v1");
-          } else {
-            const activeChitti = list.find((c) => c.chitti_id === currentChittiId);
-            if (activeChitti && activeChitti.formula_id) {
-              setCurrentFormulaId(activeChitti.formula_id);
-            }
-          }
+    if (!silent) {
+      setChittisLoading(true);
+      setDetails(null);
+    }
+
+    try {
+      const res = await fetch(`/api/chittis?tenant_id=${currentTenantId}`);
+      if (res.status === 503) {
+        handleDbOfflineFallback(currentTenantId);
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      setChittis(list);
+      saveChittisCache(currentTenantId, list);
+      setIsDbOffline(false);
+      setIsReadOnlyMode(false);
+      setChittisLoading(false);
+
+      if (list.length > 0) {
+        const exists = list.some((c) => c.chitti_id === currentChittiId);
+        if (!exists) {
+          setCurrentChittiId(list[0].chitti_id);
+          setCurrentFormulaId(list[0].formula_id || "standard_chit_v1");
         } else {
-          setCurrentChittiId("");
-          setDetails(null);
+          const activeChitti = list.find((c) => c.chitti_id === currentChittiId);
+          if (activeChitti && activeChitti.formula_id) {
+            setCurrentFormulaId(activeChitti.formula_id);
+          }
         }
-      })
-      .catch((err) => {
-        console.error("Error fetching chittis:", err);
-        setChittis([]);
-        setChittisLoading(false);
-      });
+      } else {
+        setCurrentChittiId("");
+        setDetails(null);
+      }
+    } catch (err) {
+      console.warn("Chittis fetch encountered error, loading snapshot cache:", err);
+      handleDbOfflineFallback(currentTenantId);
+    }
+  };
+
+  // Load chittis when manager email changes
+  useEffect(() => {
+    fetchChittis();
   }, [currentTenantId]);
+
+  // Periodic background heartbeat to detect when NocoDB comes back online
+  useEffect(() => {
+    if (!isDbOffline) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/health");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.db_online) {
+            console.log("Database connection restored automatically!");
+            setIsDbOffline(false);
+            setIsReadOnlyMode(false);
+            showToast("Database reconnected! Live data synchronized.");
+            fetchChittis(true);
+            fetchDetails(true);
+          }
+        }
+      } catch (e) {}
+    }, 12000);
+
+    return () => clearInterval(interval);
+  }, [isDbOffline, currentTenantId, currentChittiId, activeMonth]);
+
+  // Manual Reconnect Handler
+  const handleManualReconnect = async () => {
+    setIsCheckingConnection(true);
+    try {
+      const res = await fetch("/api/health");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.db_online) {
+          setIsDbOffline(false);
+          setIsReadOnlyMode(false);
+          showToast("Database reconnected! Live data synchronized.");
+          await fetchChittis(true);
+          await fetchDetails(true);
+          setIsCheckingConnection(false);
+          return;
+        }
+      }
+      showToast("Database is still unreachable. Continuing in Read-Only cached mode.", "error");
+    } catch (err) {
+      showToast("Cannot connect to server. Continuing in Read-Only cached mode.", "error");
+    } finally {
+      setIsCheckingConnection(false);
+    }
+  };
 
   // When chitti changes, update formula id from chitti record and reset details cache
   useEffect(() => {
@@ -184,7 +329,7 @@ export default function App() {
   }, [currentChittiId, chittis]);
 
   // Load chitti details with strict fingerprinting guard to prevent race conditions / cache contamination
-  const fetchDetails = (silent = false): Promise<void> => {
+  const fetchDetails = async (silent = false): Promise<void> => {
     if (!currentChittiId || !currentTenantId) return Promise.resolve();
     const fingerprint = `${currentTenantId}:${currentChittiId}:${activeMonth}`;
     fetchFingerprintRef.current = fingerprint;
@@ -192,23 +337,30 @@ export default function App() {
     if (!silent) setLoading(true);
     else setIsRefreshing(true);
 
-    return fetch(`/api/chittis/${currentChittiId}/details?tenant_id=${currentTenantId}&month=${activeMonth}`)
-      .then((res) => res.json())
-      .then((data) => {
-        // Only update state if fingerprint matches current selection (discards stale responses)
-        if (fetchFingerprintRef.current === fingerprint) {
-          setDetails(data);
-          setLoading(false);
-          setIsRefreshing(false);
-        }
-      })
-      .catch((err) => {
-        console.error("Error fetching chitti details:", err);
-        if (fetchFingerprintRef.current === fingerprint) {
-          setLoading(false);
-          setIsRefreshing(false);
-        }
-      });
+    try {
+      const res = await fetch(`/api/chittis/${currentChittiId}/details?tenant_id=${currentTenantId}&month=${activeMonth}`);
+      if (res.status === 503) {
+        handleDetailsOfflineFallback(currentTenantId, currentChittiId);
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (fetchFingerprintRef.current === fingerprint) {
+        setDetails(data);
+        saveDetailsCache(currentTenantId, currentChittiId, data);
+        setIsDbOffline(false);
+        setIsReadOnlyMode(false);
+        setLoading(false);
+        setIsRefreshing(false);
+      }
+    } catch (err) {
+      console.warn("Chitti details fetch encountered error, loading snapshot cache:", err);
+      if (fetchFingerprintRef.current === fingerprint) {
+        handleDetailsOfflineFallback(currentTenantId, currentChittiId);
+      }
+    }
   };
 
   const handleSignOut = () => {
@@ -301,21 +453,11 @@ export default function App() {
   };
 
   const handleEditMember = async (shareId: string, memberName: string, phone: string) => {
-    if (!editMemberShare) return;
+    if (!editMemberShare || isEditingMember) return;
     const shareTenantId = editMemberShare.tenant_id || currentTenantId || details?.chitti?.tenant_id || "";
     const shareChittiId = editMemberShare.chitti_id || currentChittiId || details?.chitti?.chitti_id || "";
 
-    // Optimistic UI card-level update for instant reflection without full reload
-    if (details) {
-      setDetails({
-        ...details,
-        members: details.members.map(m =>
-          m.share_id === shareId && m.chitti_id === shareChittiId ? { ...m, member_name: memberName, phone } : m
-        )
-      });
-    }
-    setEditMemberShare(null);
-
+    setIsEditingMember(true);
     try {
       const res = await fetch(`/api/shares/${shareId}`, {
         method: "PATCH",
@@ -332,13 +474,25 @@ export default function App() {
         showToast(errData.error || "Failed to update member info on server.", "error");
         await fetchDetails();
       } else {
+        // Optimistic UI card-level update for instant reflection
+        if (details) {
+          setDetails({
+            ...details,
+            members: details.members.map(m =>
+              m.share_id === shareId && m.chitti_id === shareChittiId ? { ...m, member_name: memberName, phone } : m
+            )
+          });
+        }
         showToast("Member details updated successfully!");
+        setEditMemberShare(null); // Close modal only after successful sync
         await fetchDetails(true);
       }
     } catch (err) {
       console.error("Error editing member info:", err);
       showToast("Network error: Unable to update member info.", "error");
       await fetchDetails();
+    } finally {
+      setIsEditingMember(false);
     }
   };
 
@@ -737,7 +891,58 @@ export default function App() {
         totalPending={details?.total_pending_market || 0}
         onOpenCreateChitti={() => setIsCreateChittiOpen(true)}
         onOpenNocoDB={() => setIsNocoDBOpen(true)}
+        isDbOffline={isDbOffline}
       />
+
+      {/* Prominent Database Offline / Read-Only Mode Banner */}
+      {isDbOffline && (
+        <div className="w-full bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 border-b border-amber-500/40 text-amber-200 px-4 py-3 shadow-lg">
+          <div className="max-w-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 animate-pulse" />
+              <div className="space-y-0.5">
+                <div className="font-bold text-amber-300 text-sm flex items-center gap-1.5">
+                  <span>Database Offline</span>
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
+                    Read-Only Mode Active
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-relaxed text-[11px]">
+                  Database is currently offline, we are retrying in background. You are in read-only mode fetched from local last cache which may not be accurate. All write actions are paused to protect ledger integrity.
+                  {cacheTimestamp && (
+                    <span className="text-amber-300 font-semibold block mt-0.5">
+                      Last local snapshot time: {cacheTimestamp}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              <div className="flex items-center gap-1 text-[11px] text-amber-400/90 font-mono">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Auto-retrying...</span>
+              </div>
+              <button
+                onClick={handleManualReconnect}
+                disabled={isCheckingConnection}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs transition shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isCheckingConnection ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Checking...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Retry Now</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Container */}
       <main className="flex-1 w-full max-w-2xl mx-auto px-3 sm:px-4 py-4 space-y-4">
@@ -811,7 +1016,7 @@ export default function App() {
         </div>
 
         {/* Global Floating Operation Indicator Banner if an async mutation is processing */}
-        {(isRecordingPayment || isUpdatingWinner || isCreatingChitti || isDeletingChitti) && (
+        {(isRecordingPayment || isUpdatingWinner || isCreatingChitti || isDeletingChitti || isEditingMember) && (
           <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white border border-sky-500/40 shadow-2xl px-4 py-2 rounded-full flex items-center gap-2.5 text-xs font-semibold backdrop-blur-md animate-pulse">
             <Loader2 className="w-4 h-4 animate-spin text-sky-400 shrink-0" />
             <span>
@@ -819,6 +1024,7 @@ export default function App() {
               {isDeletingChitti && "Permanently Deleting Scheme & Wiping NocoDB Records..."}
               {isRecordingPayment && "Recording Payment & Updating Ledger in NocoDB..."}
               {isUpdatingWinner && "Synchronizing Winner Status & Dividends..."}
+              {isEditingMember && "Saving Member Info & Updating NocoDB..."}
             </span>
           </div>
         )}
@@ -837,6 +1043,34 @@ export default function App() {
               <p className="text-xs text-slate-500">
                 Retrieving your tenant data and active schemes from NocoDB. Please wait...
               </p>
+            </div>
+          </div>
+        ) : isDbOffline && chittis.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-amber-200 p-8 sm:p-10 text-center space-y-4 shadow-sm">
+            <div className="w-16 h-16 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold shadow-lg shadow-amber-500/10">
+              <Database className="w-8 h-8 animate-pulse text-amber-500" />
+            </div>
+            <div className="space-y-1.5 max-w-md mx-auto">
+              <h2 className="text-lg font-bold text-slate-900">
+                Database Server Offline
+              </h2>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                NocoDB database server is currently unreachable. No local cache was found on this browser session.
+              </p>
+              <div className="inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200/60 font-medium">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Auto-retrying database connection in background...</span>
+              </div>
+            </div>
+            <div className="pt-2">
+              <button
+                onClick={handleManualReconnect}
+                disabled={isCheckingConnection}
+                className="bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-bold py-3.5 px-6 rounded-xl text-xs inline-flex items-center gap-2 shadow-lg transition cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${isCheckingConnection ? "animate-spin" : ""}`} />
+                <span>{isCheckingConnection ? "Checking..." : "Retry Connection Now"}</span>
+              </button>
             </div>
           </div>
         ) : chittis.length === 0 ? (
@@ -901,6 +1135,7 @@ export default function App() {
                 onRecordPayment={setRecordPaymentShare}
                 onAssignWinner={setAssignWinnerShare}
                 onEditMember={setEditMemberShare}
+                isReadOnly={isReadOnlyMode}
               />
             ))}
           </div>
@@ -953,6 +1188,7 @@ export default function App() {
             onDownloadHtml={handleDownloadHtmlReport}
             onDeleteChitti={handleDeleteChitti}
             isDeleting={isDeletingChitti}
+            isReadOnly={isReadOnlyMode}
           />
         )}
       </main>
@@ -990,8 +1226,9 @@ export default function App() {
       {editMemberShare && (
         <EditMemberModal
           share={editMemberShare}
-          onClose={() => setEditMemberShare(null)}
+          onClose={() => !isEditingMember && setEditMemberShare(null)}
           onSubmit={handleEditMember}
+          isSubmitting={isEditingMember}
         />
       )}
 

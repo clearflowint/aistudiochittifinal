@@ -16,6 +16,7 @@ interface StickyAppBarProps {
   totalPending: number;
   onOpenCreateChitti: () => void;
   onOpenNocoDB: () => void;
+  isDbOffline?: boolean;
 }
 
 export const StickyAppBar: React.FC<StickyAppBarProps> = ({
@@ -32,6 +33,7 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
   totalPending,
   onOpenCreateChitti,
   onOpenNocoDB,
+  isDbOffline = false,
 }) => {
   // Filter chittis based on selected math engine template
   const filteredChittis = (chittis || []).filter(
@@ -55,8 +57,19 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
             {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
           </span>
           <button
-            onClick={onOpenCreateChitti}
-            className="bg-sky-600 hover:bg-sky-500 text-white px-2 py-0.5 rounded font-medium text-[10px] transition shadow-sm cursor-pointer"
+            onClick={() => {
+              if (isDbOffline) {
+                alert("Database is currently offline. Scheme creation is paused to protect ledger integrity.");
+                return;
+              }
+              onOpenCreateChitti();
+            }}
+            disabled={isDbOffline}
+            className={`px-2 py-0.5 rounded font-medium text-[10px] transition shadow-sm ${
+              isDbOffline
+                ? "bg-slate-700 text-slate-400 cursor-not-allowed"
+                : "bg-sky-600 hover:bg-sky-500 text-white cursor-pointer"
+            }`}
           >
             + New Chitti
           </button>
@@ -64,9 +77,13 @@ export const StickyAppBar: React.FC<StickyAppBarProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={onOpenNocoDB}
-            className="flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-md hover:bg-emerald-500/20 transition font-medium cursor-pointer"
+            className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md transition font-medium cursor-pointer border ${
+              isDbOffline
+                ? "bg-rose-500/15 text-rose-400 border-rose-500/30 hover:bg-rose-500/25"
+                : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20"
+            }`}
           >
-            <Database className="w-3 h-3" /> DB Connected
+            <Database className="w-3 h-3" /> {isDbOffline ? "DB Offline (Read-Only)" : "DB Connected"}
           </button>
           <span className="text-slate-400 hidden sm:flex items-center gap-1 font-medium">
             <Zap className="w-3 h-3 text-amber-400" /> ClearFlow Automations

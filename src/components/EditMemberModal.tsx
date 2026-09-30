@@ -6,18 +6,22 @@ interface EditMemberModalProps {
   share: MemberShare;
   onClose: () => void;
   onSubmit: (shareId: string, memberName: string, phone: string) => Promise<void> | void;
+  isSubmitting?: boolean;
 }
 
 export const EditMemberModal: React.FC<EditMemberModalProps> = ({
   share,
   onClose,
   onSubmit,
+  isSubmitting: externalSubmitting = false,
 }) => {
   const [memberName, setMemberName] = useState(share.member_name);
   // Clean phone number to 10 digits if +91 is present
   const cleanPhone = share.phone ? share.phone.replace(/^\+?91\s*/, "") : "";
   const [phone, setPhone] = useState(cleanPhone);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLocalSubmitting, setIsLocalSubmitting] = useState(false);
+
+  const isSubmitting = externalSubmitting || isLocalSubmitting;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,11 +32,11 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
       return;
     }
     const finalPhone = `+91${cleanDigits}`;
-    setIsSubmitting(true);
+    setIsLocalSubmitting(true);
     try {
       await onSubmit(share.share_id, memberName.trim(), finalPhone);
     } finally {
-      setIsSubmitting(false);
+      setIsLocalSubmitting(false);
     }
   };
 
@@ -93,7 +97,8 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
                 value={memberName}
                 onChange={(e) => setMemberName(e.target.value)}
                 required
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs"
+                disabled={isSubmitting}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs disabled:opacity-50"
               />
             </div>
           </div>
@@ -112,7 +117,8 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
                 placeholder="9876543210"
                 maxLength={10}
                 required
-                className="w-full px-3 py-2 bg-transparent text-slate-900 font-medium focus:outline-none text-xs"
+                disabled={isSubmitting}
+                className="w-full px-3 py-2 bg-transparent text-slate-900 font-medium focus:outline-none text-xs disabled:opacity-50"
               />
             </div>
           </div>
@@ -121,15 +127,24 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 rounded-xl text-xs transition"
+              disabled={isSubmitting}
+              className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 rounded-xl text-xs transition disabled:opacity-50 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="w-1/2 bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold py-2.5 rounded-xl text-xs transition shadow-sm"
+              disabled={isSubmitting}
+              className="w-1/2 bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold py-2.5 rounded-xl text-xs transition shadow-sm disabled:opacity-75 flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              Save Changes
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <span>Save Changes</span>
+              )}
             </button>
           </div>
         </form>
