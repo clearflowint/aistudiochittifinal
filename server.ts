@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { spawnSync } from "child_process";
 import fs from "fs";
+import { calculateChittiMonth } from "./src/chittiMonthUtils";
 import {
   checkNocoDBConnection,
   initializeNocoDBTables,
@@ -297,12 +298,8 @@ async function recalculateAndPopulateAllExistingChittisAndShares() {
       const F = Number(chitti.commission) || 2000;
       const formulaId = chitti.formula_id || "standard_chit_v1";
 
-      // Compute calendar current month
-      const start = new Date(chitti.start_date || "2025-01-01");
-      const diffYears = now.getFullYear() - start.getFullYear();
-      const diffMonths = now.getMonth() - start.getMonth();
-      const elapsed = diffYears * 12 + diffMonths + 1;
-      const t = Math.max(1, Math.min(elapsed, totalMonths));
+      // Compute calendar current month based on exact cycle crossing
+      const t = calculateChittiMonth(chitti.start_date, totalMonths, now);
 
       // Compute/validate payout schedule
       let scheduleArr = [];
@@ -571,12 +568,8 @@ async function startServer() {
       scheduleArr.push({ month: m, payout: p });
     }
 
-    const start = new Date(startDate);
     const now = new Date();
-    const diffYears = now.getFullYear() - start.getFullYear();
-    const diffMonths = now.getMonth() - start.getMonth();
-    const elapsed = diffYears * 12 + diffMonths + 1;
-    const initialCurrentMonth = Math.max(1, Math.min(elapsed, tMonths));
+    const initialCurrentMonth = calculateChittiMonth(startDate, tMonths, now);
     const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
     const newChitti: ChittiMaster = {
@@ -704,20 +697,12 @@ async function startServer() {
         return res.status(404).json({ error: "Chitti not found or tenant mismatch" });
       }
 
-      // Purely fetch pre-calculated columns directly from database on refresh (zero runtime recomputation)
+      // Calculate current active month based on exact cycle crossing (spawns only when start day of month is crossed)
       const now = new Date();
       const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const calculatedMonth = calculateChittiMonth(chitti.start_date, chitti.total_months, now);
 
-      function getCurrentMonth(startDateStr: string, totalMonths: number): number {
-        const start = new Date(startDateStr);
-        const diffYears = now.getFullYear() - start.getFullYear();
-        const diffMonths = now.getMonth() - start.getMonth();
-        const elapsed = diffYears * 12 + diffMonths + 1;
-        return Math.max(1, Math.min(elapsed, totalMonths));
-      }
-
-      const calculatedMonth = getCurrentMonth(chitti.start_date, chitti.total_months);
-      if (!chitti.current_month || chitti.last_checked_date !== currentYearMonth) {
+      if (chitti.current_month !== calculatedMonth || chitti.last_checked_date !== currentYearMonth) {
         chitti.current_month = calculatedMonth;
         chitti.last_checked_date = currentYearMonth;
         await updateRecord("chittis", {
@@ -727,7 +712,7 @@ async function startServer() {
         }).catch(() => {});
       }
 
-      const t = chitti.current_month || 1;
+      const t = chitti.current_month || calculatedMonth || 1;
       const N = Number(chitti.total_members) || 20;
       const U = Number(chitti.u_due) || 5000;
       const D = Number(chitti.d_due) || 6000;
@@ -749,29 +734,60 @@ async function startServer() {
       const chittiShares = (dbShares || []).filter((s: any) => String(s.chitti_id) === String(chitti_id));
       const chittiTxs = (dbTxs || []).filter((tx: any) => String(tx.chitti_id) === String(chitti_id));
 
-      // Member share details fetched directly from database columns (zero calculation loops)
+      let liveCalculatedArrears = 0;
+
+      // Member share details with automatic billing sync when month t advances
       const memberDetails = chittiShares.map((share: any) => {
-        const status =
-          share.win_month !== null && Number(share.win_month) <= t ? `Drawn M${share.win_month}` : "Undrawn";
-        const isDrawn = share.win_month !== null && t > Number(share.win_month);
-        const monthlyDueCurrent = Number(share.monthly_due_current) || (isDrawn ? D : U);
-        const totalBilled = Number(share.total_billed) || 0;
-        const totalPaid = Number(share.total_paid) || 0;
-        const netBalance = Number(share.net_balance) || 0;
-        const pendingAmount = Number(share.pending_amount) !== undefined && !isNaN(Number(share.pending_amount))
-          ? Number(share.pending_amount)
-          : (netBalance < 0 ? Math.abs(netBalance) : 0);
-        const advanceAmount = Number(share.advance_amount) !== undefined && !isNaN(Number(share.advance_amount))
-          ? Number(share.advance_amount)
-          : (netBalance > 0 ? netBalance : 0);
+        let expectedTotalBilled = 0;
+        let expectedMonthlyDue = U;
+        for (let m = 1; m <= t; m++) {
+          const dueForM = calculateFormulaDue(m, share.win_month, U, D, N, F, formulaId);
+          expectedTotalBilled += dueForM;
+          if (m === t) expectedMonthlyDue = dueForM;
+        }
 
         const shareTxs = chittiTxs.filter((tx: any) => String(tx.share_id) === String(share.share_id) && !tx.is_void);
+        const totalPaid = shareTxs.reduce((sum: number, tx: any) => sum + (Number(tx.amount) || 0), 0);
+        const netBalance = totalPaid - expectedTotalBilled;
+        const pendingAmount = netBalance < 0 ? Math.abs(netBalance) : 0;
+        const advanceAmount = netBalance > 0 ? netBalance : 0;
+
+        if (pendingAmount > 0) {
+          liveCalculatedArrears += pendingAmount;
+        }
+
+        const isDrawn = share.win_month !== null && t > Number(share.win_month);
+        const status =
+          share.win_month !== null && Number(share.win_month) <= t ? `Drawn M${share.win_month}` : "Undrawn";
+
+        // Auto-heal database record if total_billed or monthly_due_current is out of sync with active month t
+        if (
+          Number(share.total_billed) !== expectedTotalBilled ||
+          Number(share.monthly_due_current) !== expectedMonthlyDue ||
+          Number(share.net_balance) !== netBalance
+        ) {
+          share.total_billed = expectedTotalBilled;
+          share.monthly_due_current = expectedMonthlyDue;
+          share.total_paid = totalPaid;
+          share.net_balance = netBalance;
+          share.pending_amount = pendingAmount;
+          share.advance_amount = advanceAmount;
+          updateRecord("shares", {
+            share_id: share.share_id,
+            total_billed: expectedTotalBilled,
+            monthly_due_current: expectedMonthlyDue,
+            total_paid: totalPaid,
+            net_balance: netBalance,
+            pending_amount: pendingAmount,
+            advance_amount: advanceAmount,
+          }).catch((err) => console.error(`Error auto-syncing share ${share.share_id} bill:`, err));
+        }
 
         return {
           ...share,
           status,
-          monthly_due_current: monthlyDueCurrent,
-          total_billed: totalBilled,
+          monthly_due_current: expectedMonthlyDue,
+          total_billed: expectedTotalBilled,
           total_paid: totalPaid,
           net_balance: netBalance,
           pending_amount: pendingAmount,
@@ -780,8 +796,15 @@ async function startServer() {
         };
       });
 
-      // Chitti Treasury & Arrears fetched DIRECTLY from database columns (zero calculation loops)
-      const totalArrears = Number(chitti.total_arrears) || 0;
+      // Chitti Treasury & Arrears
+      const totalArrears = liveCalculatedArrears;
+      if (Number(chitti.total_arrears) !== liveCalculatedArrears) {
+        chitti.total_arrears = liveCalculatedArrears;
+        updateRecord("chittis", {
+          chitti_id: chitti.chitti_id,
+          total_arrears: liveCalculatedArrears,
+        }).catch(() => {});
+      }
       const cumulativeCommission = Number(chitti.cumulative_commission) || (t * F);
       const totalDisbursed = Number(chitti.total_disbursed) || 0;
       const totalCashCollected = Number(chitti.total_cash_collected) || 0;

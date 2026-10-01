@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Tenant, MathTemplate, ChittiMaster, ChittiDetails, MemberShare } from "./types";
+import { calculateChittiMonth } from "./chittiMonthUtils";
 import { StickyAppBar } from "./components/StickyAppBar";
 import { ShareCard } from "./components/ShareCard";
 import { ManagerTreasurySheet } from "./components/ManagerTreasurySheet";
@@ -313,17 +314,12 @@ export default function App() {
     }
   }, [currentChittiId, chittis]);
 
-  // Calculate calendar active month whenever current chitti changes
+  // Calculate calendar active month whenever current chitti changes based on exact cycle crossing
   useEffect(() => {
     if (!currentChittiId) return;
     const chitti = chittis.find((c) => c.chitti_id === currentChittiId);
     if (chitti) {
-      const start = new Date(chitti.start_date || "2025-01-01");
-      const now = new Date();
-      const diffYears = now.getFullYear() - start.getFullYear();
-      const diffMonths = now.getMonth() - start.getMonth();
-      const elapsed = diffYears * 12 + diffMonths + 1;
-      const calMonth = Math.max(0, Math.min(elapsed, chitti.total_months));
+      const calMonth = calculateChittiMonth(chitti.start_date || "2025-01-01", chitti.total_months);
       setActiveMonth(calMonth);
     }
   }, [currentChittiId, chittis]);
